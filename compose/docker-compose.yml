@@ -1,29 +1,17 @@
 services:
-  ifr-trt-gpu0:
-    image: insightface-rest:${IFR_VERSION}
+  ifr-cpu:
+    image: insightface-rest-cpu:${IFR_VERSION}
     build:
       context: ../
-      dockerfile: dockerfiles/Dockerfile_trt
+      dockerfile: dockerfiles/Dockerfile_cpu
     hostname: ifr
     env_file:
-      - .env
+      - cpu.env
     volumes:
       - ../models:/models
       - ../if_rest:/app/if_rest
       - ../entrypoint.sh:/app/entrypoint.sh
-      - ../misc/test_images:/images/test_images
+      - ../images:/images
     ports:
       - 18081:18080
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['0']
-              capabilities: [gpu]
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:18080/health" ]
-      interval: 300s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+
