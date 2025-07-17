@@ -8,8 +8,9 @@ __pycache__
 /models/onnx
 /models/trt-engines
 /crops
-/test_images
+test_images
 /deploy_debug.sh
 TODO.md
 /models/models.override.json
 .env
+test

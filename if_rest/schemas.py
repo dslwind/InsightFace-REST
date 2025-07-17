@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import List, Optional
 
 import pydantic
 from pydantic import BaseModel
@@ -9,6 +9,26 @@ example_img = 'test_images/Stallone.jpg'
 # Read runtime settings from environment variables
 settings = Settings()
 
+dummy_base64_string_1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+dummy_base64_string_2 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFhAJ/wlseKgAAAABJRU5ErkJggg=="
+
+face_verification_example = {
+    "images": {
+        "data": [
+            dummy_base64_string_1,
+            dummy_base64_string_2
+        ],
+        "urls": [
+            'test_images/TH.png',
+            'test_images/TH1.jpg'
+        ]
+    },
+    "threshold": 0.3,
+    "limit_faces": 1,
+    "min_face_size": 0,
+    "verbose_timings": False,
+    "msgpack": False
+}
 
 class Images(BaseModel):
     data: Optional[List[str] | List[bytes]] = pydantic.Field(default=None, example=None,
@@ -100,3 +120,33 @@ class BodyDraw(BaseModel):
     detect_masks: Optional[bool] = pydantic.Field(default=settings.defaults.detect_masks,
                                                   example=settings.defaults.detect_masks,
                                                   description='Detect medical masks')
+
+class FaceVerification(BaseModel):
+    images: Images = pydantic.Field(
+        example=face_verification_example["images"]
+    )
+
+    threshold: Optional[float] = pydantic.Field(default=0.3,
+                                                example=0.3,
+                                                description='The threshold for face verification.')
+
+    limit_faces: Optional[int] = pydantic.Field(default=0,
+                                                example=0,
+                                                description='Maximum number of faces to be processed')
+
+    min_face_size: Optional[int] = pydantic.Field(default=0,
+                                                  example=0,
+                                                  description='Ignore faces smaller than this size')
+
+    verbose_timings: Optional[bool] = pydantic.Field(default=False,
+                                                     example=True,
+                                                     description='Return all timings.')
+
+    msgpack: Optional[bool] = pydantic.Field(default=False,
+                                             example=False,
+                                             description='Use MSGPACK for response serialization')
+    
+    class Config:
+        schema_extra = {
+            "example": face_verification_example
+        }

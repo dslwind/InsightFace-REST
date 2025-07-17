@@ -1,16 +1,14 @@
-from typing import Annotated
-from typing import Callable, List
-from typing import Optional
+from typing import Annotated, Callable, List, Optional
 
 import msgpack
-from fastapi import File, Form, Header, HTTPException, APIRouter
-from fastapi import Request, Response
+from fastapi import (APIRouter, File, Form, Header, HTTPException, Request,
+                     Response)
 from fastapi.responses import UJSONResponse
 from fastapi.routing import APIRoute
-from starlette.responses import StreamingResponse, PlainTextResponse
+from starlette.responses import PlainTextResponse, StreamingResponse
 
 from if_rest.core.processing import ProcessingDep
-from if_rest.schemas import BodyDraw, BodyExtract
+from if_rest.schemas import BodyDraw, BodyExtract, FaceVerification
 
 
 class MsgPackRequest(Request):
@@ -131,5 +129,29 @@ async def draw_upl(processing: ProcessingDep, file: bytes = File(...), threshold
                                        multipart=True)
         output.seek(0)
         return StreamingResponse(output, media_type='image/jpg')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post('/verify', tags=['Detection & recognition'])
+async def verify(
+    data: FaceVerification,
+    processing: ProcessingDep
+):
+    """
+    Compare two faces from the first two images provided and verify if they are from the same person.
+
+       - **images**: dict containing either links or data lists with at least two images. (*required*)
+       - **threshold**: Similarity threshold. Faces with a score above this value are considered the same person. Default: 0.3 (*optional*)
+       \f
+    """
+    try:
+        # Use the threshold from the request if provided, otherwise default to 0.3 for verification
+        threshold = data.threshold if data.threshold is not None else 0.3
+        result = await processing.verify(
+            images=data.images,
+            threshold=threshold
+        )
+        # logger.info(result)
+        return UJSONResponse(dict(result))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

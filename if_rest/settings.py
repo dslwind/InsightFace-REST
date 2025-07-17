@@ -4,7 +4,7 @@ from pydantic.v1.env_settings import BaseSettings
 from pydantic.v1.validators import str_validator
 
 headers = {
-    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0'
+    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0'
 }
 
 

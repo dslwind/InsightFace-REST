@@ -3,7 +3,7 @@ import io
 import os
 import sys
 import time
-from typing import Dict, List, Union, Annotated
+from typing import Annotated, List
 
 import aiohttp
 import cv2
@@ -226,6 +226,99 @@ class Processing:
         io_buf = io.BytesIO(buffer)
         return io_buf
 
+
+    async def verify(self,
+                     images: Images,
+                     threshold: float = 0.3,
+                     limit_faces: int = 0,
+                     min_face_size: int = 0,
+                     **kwargs):
+        """
+        Verifies if two images contain the same person.
+
+        Args:
+            images (Images): An Images object containing a list of image data or links.
+            threshold (float): The threshold for face verification. Defaults to 0.3.
+            limit_faces (int): The maximum number of faces to detect. Defaults to 0.
+            min_face_size (int): The minimum size of a face to detect. Defaults to 0.
+
+        Returns:
+            Dict: A dictionary containing verification result.
+        """
+        t0 = time.time()
+        
+        result = {
+            "is_same_person": False,
+            "similarity_score": -1.0,
+            "error_message": "",
+            "took": {
+                "total_ms": 0
+            }
+        }
+
+        # Process the incoming images object
+        processed_images = await get_images(images, decode=self.model.decode_required, session=self.dl_client)
+
+        if len(processed_images) < 2:
+            result["error_message"] = "Verification requires at least two images."
+            return result
+
+        # Take the first two images for comparison
+        img1_cv2 = processed_images[0].get('data')
+        img2_cv2 = processed_images[1].get('data')
+
+        if img1_cv2 is None or img2_cv2 is None:
+            result["error_message"] = "Failed to load one or both images."
+            return result
+
+        # Get faces from both images
+        t_det_start = time.time()
+        faces1_list = await self.model.get([img1_cv2],
+                                      threshold=0.5,
+                                      extract_embedding=True,
+                                      limit_faces=limit_faces,
+                                      min_face_size=min_face_size)
+
+        faces2_list = await self.model.get([img2_cv2],
+                                      threshold=0.5,
+                                      extract_embedding=True,
+                                      limit_faces=limit_faces,
+                                      min_face_size=min_face_size)
+        
+        took_detection = time.time() - t_det_start
+        
+        faces1 = faces1_list[0] if faces1_list else []
+        faces2 = faces2_list[0] if faces2_list else []
+
+        # Check if faces were found
+        if not faces1:
+            result["error_message"] = "No face detected in the first image."
+            return result
+        if not faces2:
+            result["error_message"] = "No face detected in the second image."
+            return result
+
+        # Use the face with the highest detection score
+        face1 = sorted(faces1, key=lambda x: x["prob"], reverse=True)[0]
+        face2 = sorted(faces2, key=lambda x: x["prob"], reverse=True)[0]
+
+        # Compare embeddings
+        embedding1 = face1['vec']
+        embedding2 = face2['vec']
+
+        try:
+            similarity = np.dot(embedding1, embedding2)
+            
+            result["similarity_score"] = float(similarity)
+            result["is_same_person"] = bool(similarity > threshold)
+        except Exception as e:
+            logger.error(f"Error calculating similarity: {e}")
+            result["error_message"] = f"An unexpected error occurred during comparison: {e}"
+
+        # took_total = time.time() - t0
+        # result["took"]["total_ms"] = took_total * 1000
+        # result["took"]["detection_ms"] = took_detection * 1000
+        return result
 
 processing: Processing | None = None
 

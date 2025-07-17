@@ -1,7 +1,6 @@
 import os
 
 from fastapi import APIRouter, HTTPException
-from starlette.responses import RedirectResponse
 
 from if_rest.core.processing import ProcessingDep
 from if_rest.schemas import Images
@@ -54,6 +53,6 @@ async def check_health(processing: ProcessingDep):
         raise HTTPException(500, detail='self check failed')
 
 
-@router.get('/', include_in_schema=False)
-async def redirect_to_docs():
-    return RedirectResponse(url="/docs")
+# @router.get('/', include_in_schema=False)
+# async def redirect_to_docs():
+#     return RedirectResponse(url="/docs")
