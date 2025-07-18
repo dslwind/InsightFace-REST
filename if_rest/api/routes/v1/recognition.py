@@ -148,7 +148,8 @@ async def verify(
         # Use the threshold from the request if provided, otherwise default to 0.3 for verification
         threshold = data.threshold if data.threshold is not None else 0.3
         result = await processing.verify(
-            images=data.images,
+            image1=data.image1,
+            image2=data.image2,
             threshold=threshold
         )
         # logger.info(result)

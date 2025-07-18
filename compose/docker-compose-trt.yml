@@ -6,14 +6,14 @@ services:
       dockerfile: dockerfiles/Dockerfile_trt
     hostname: ifr
     env_file:
-      - .env
+      - trt.env
     volumes:
       - ../models:/models
       - ../if_rest:/app/if_rest
       - ../entrypoint.sh:/app/entrypoint.sh
       - ../misc/test_images:/images/test_images
     ports:
-      - 18081:18080
+      - 9003:18080
     deploy:
       resources:
         reservations:
