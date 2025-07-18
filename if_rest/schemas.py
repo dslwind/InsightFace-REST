@@ -147,6 +147,6 @@ class FaceVerification(BaseModel):
                                              description='Use MSGPACK for response serialization')
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": face_verification_example
         }

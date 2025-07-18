@@ -250,10 +250,10 @@ class Processing:
         result = {
             "is_same_person": False,
             "similarity_score": -1.0,
-            "error_message": "",
-            "took": {
-                "total_ms": 0
-            }
+            "error_message": ""
+            # "took": {
+            #     "total_ms": 0
+            # }
         }
 
         # Process the incoming images object
