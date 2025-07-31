@@ -10,7 +10,7 @@ ujson
 msgpack
 tqdm
 icc-rt
-numba
+numba==0.59.1
 opencv-python
 scikit-image
 onnx

@@ -4,8 +4,11 @@ ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
 ENV PIP_INSTALL="python -m pip --no-cache-dir install --upgrade"
 
+ARG MIRROR_URL="https://mirrors.cernet.edu.cn/"
+RUN sed -i "s|http://deb.debian.org/|${MIRROR_URL}|g" /etc/apt/sources.list.d/debian.sources
+
 RUN apt-get update &&\
-    apt-get install -y\
+    apt-get install -y --no-install-recommends\
             build-essential\
             libgl1-mesa-glx \
             protobuf-compiler \
@@ -20,12 +23,12 @@ RUN apt-get update &&\
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN $PIP_INSTALL -r requirements.txt
+RUN pip config set global.index-url https://mirrors.cernet.edu.cn/pypi/web/simple && \
+    $PIP_INSTALL -r requirements.txt
 
 WORKDIR /app
 COPY if_rest /app/if_rest
 COPY entrypoint.sh /app/entrypoint.sh
-
 
 ENTRYPOINT [ "bash" ]
 CMD ["entrypoint.sh"]
