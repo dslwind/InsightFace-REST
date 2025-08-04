@@ -6,11 +6,13 @@ services:
       dockerfile: dockerfiles/Dockerfile_cpu
     hostname: ifr
     env_file:
-      - cpu.env
+      - .env
     volumes:
       - ../models:/models
       - ../if_rest:/app/if_rest
       - ../entrypoint.sh:/app/entrypoint.sh
+      - ../misc:/images
     ports:
       - 18081:18080
-
+    environment:
+      - TZ=Asia/Shanghai
