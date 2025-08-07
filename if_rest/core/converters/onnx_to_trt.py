@@ -13,7 +13,9 @@ TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 EXPLICIT_BATCH = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
 
 
-def _build_engine_onnx(input_onnx: Union[str, bytes], force_fp16: bool = False, max_batch_size: int = 1,
+def _build_engine_onnx(input_onnx: Union[str, bytes], 
+                       force_fp16: bool = False, 
+                       max_batch_size: int = 1,
                        max_workspace: int = 1024):
     """
     Builds TensorRT engine from provided ONNX file
@@ -48,9 +50,9 @@ def _build_engine_onnx(input_onnx: Union[str, bytes], force_fp16: bool = False, 
         else:
             config.max_workspace_size = max_workspace * 1024 * 1024
         if not parser.parse(input_onnx):
-            print('ERROR: Failed to parse the ONNX')
+            logger.error('ERROR: Failed to parse the ONNX')
             for error in range(parser.num_errors):
-                print(parser.get_error(error))
+                logger.error(parser.get_error(error))
             sys.exit(1)
 
         if max_batch_size != 1:
@@ -84,7 +86,9 @@ def check_fp16():
     return has_fp16
 
 
-def convert_onnx(input_onnx: Union[str, bytes], engine_file_path: str, force_fp16: bool = False,
+def convert_onnx(input_onnx: Union[str, bytes], 
+                 engine_file_path: str, 
+                 force_fp16: bool = False,
                  max_batch_size: int = 1):
     """
     Creates TensorRT engine and serializes it to disk
@@ -107,7 +111,8 @@ def convert_onnx(input_onnx: Union[str, bytes], engine_file_path: str, force_fp1
         onnx_obj = input_onnx
 
     engine, trt10 = _build_engine_onnx(input_onnx=onnx_obj,
-                                       force_fp16=force_fp16, max_batch_size=max_batch_size)
+                                       force_fp16=force_fp16, 
+                                       max_batch_size=max_batch_size)
 
     assert not isinstance(engine, type(None))
 
