@@ -13,8 +13,8 @@ icc-rt
 numba==0.59.1
 opencv-python
 scikit-image
-onnx==0.16.0
-onnxruntime==0.16.3
+onnx==1.16.0
+onnxruntime==1.16.3
 onnx-simplifier
 git+https://github.com/lilohuang/PyTurboJPEG.git
 exifread
