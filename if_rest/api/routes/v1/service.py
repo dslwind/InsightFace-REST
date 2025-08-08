@@ -1,6 +1,5 @@
 import os
 
-import tensorrt as trt
 from fastapi import APIRouter, HTTPException
 
 from if_rest.core.processing import ProcessingDep
@@ -28,7 +27,7 @@ def get_service_info():
 
         service_info = {
             "version": __version__,
-            "tensorrt_version": trt.__version__,
+            "tensorrt_version": os.getenv("TRT_VERSION", os.getenv("TENSORRT_VERSION")),
             "log_level": settings.log_level,
             "models": models_info,
             "defaults": defaults_info,

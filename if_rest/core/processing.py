@@ -27,12 +27,12 @@ class Processing:
         Processing class for detecting faces, extracting embeddings and drawing faces from images.
         """
         self.settings = app_settings
-        self.dl_client = None
+        self.download_client = None
         self.model: FaceAnalysis = None
         self.model_meta = None
 
-    async def start(self, dl_client: aiohttp.ClientSession = None):
-        self.dl_client = dl_client
+    async def start(self, download_client: aiohttp.ClientSession = None):
+        self.download_client = download_client
 
         # 从 settings 加载模型元数据
         try:
@@ -93,7 +93,7 @@ class Processing:
         images = await get_images(
             images,
             decode=self.model.decode_required,
-            session=self.dl_client,
+            session=self.download_client,
             b64_decode=b64_decode,
             headers=img_req_headers,
             root_images_dir=self.settings.root_images_dir,
@@ -155,7 +155,7 @@ class Processing:
         if not multipart:
             images = await get_images(
                 images,
-                session=self.dl_client,
+                session=self.download_client,
                 root_images_dir=self.settings.root_images_dir,
             )
             image = images[0].get("data")
@@ -209,7 +209,7 @@ class Processing:
         processed_images = await get_images(
             images,
             decode=self.model.decode_required,
-            session=self.dl_client,
+            session=self.download_client,
             root_images_dir=self.settings.root_images_dir,
         )
 

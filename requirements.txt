@@ -24,3 +24,4 @@ aiohttp
 tenacity
 colorlog
 numpy<2
+pydantic-settings

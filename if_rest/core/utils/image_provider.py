@@ -14,8 +14,13 @@ import cv2
 import exifread
 import imageio
 import numpy as np
-from tenacity import (before_sleep_log, retry, retry_if_not_exception_type,
-                      stop_after_attempt, wait_exponential)
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from turbojpeg import TurboJPEG
 
 from if_rest.core.utils.helpers import tobool
@@ -26,6 +31,7 @@ from if_rest.schemas import Images
 if tobool(os.getenv("USE_NVJPEG", "False")):
     try:
         from nvjpeg import NvJpeg
+
         jpeg_decoder = NvJpeg()
         logger.info("使用 nvJPEG 进行 JPEG 解码。")
     except ImportError:
@@ -54,7 +60,7 @@ def resize_image(image: np.ndarray, max_size: list = None) -> Tuple[np.ndarray, 
     height, width, _ = image.shape
 
     scale_factor = min(target_width / width, target_height / height)
-    
+
     # 如果图像过小，可能会影响检测精度，适当减小缩放因子
     if scale_factor > 2:
         scale_factor *= 0.7
@@ -72,10 +78,16 @@ def resize_image(image: np.ndarray, max_size: list = None) -> Tuple[np.ndarray, 
     h, w, _ = transformed_image.shape
     pad_right = target_width - w
     pad_bottom = target_height - h
-    
+
     if pad_right > 0 or pad_bottom > 0:
         transformed_image = cv2.copyMakeBorder(
-            transformed_image, 0, pad_bottom, 0, pad_right, cv2.BORDER_CONSTANT, value=[0, 0, 0]
+            transformed_image,
+            0,
+            pad_bottom,
+            0,
+            pad_right,
+            cv2.BORDER_CONSTANT,
+            value=[0, 0, 0],
         )
 
     return transformed_image, scale_factor
@@ -97,7 +109,7 @@ def sniff_and_process_gif(data: bytes) -> bytes:
             sequence = imageio.get_reader(data, ".gif")
             # 只处理第一帧
             first_frame = sequence.get_data(0)
-            
+
             output_buffer = io.BytesIO()
             imageio.imwrite(output_buffer, first_frame, format="jpeg")
             output_buffer.seek(0)
@@ -145,7 +157,9 @@ async def read_local_file_as_bytes(path: Path) -> np.ndarray:
         return np.frombuffer(processed_data, dtype="uint8")
 
 
-def base64_to_bytes(b64_encoded: str, b64_decode: bool = True) -> Tuple[Optional[np.ndarray], Optional[str]]:
+def base64_to_bytes(
+    b64_encoded: str, b64_decode: bool = True
+) -> Tuple[Optional[np.ndarray], Optional[str]]:
     """将 Base64 编码的字符串解码为 numpy 字节数组。"""
     try:
         data_bytes = b64_encoded.split(",")[-1] if b64_decode else b64_encoded
@@ -169,15 +183,16 @@ def decode_image_bytes(image_bytes: np.ndarray) -> np.ndarray:
         orientation_tag = exifread.process_file(
             io.BytesIO(image_bytes), stop_tag="Image Orientation"
         ).get("Image Orientation")
-        
+
         decoded_image = jpeg_decoder.decode(image_bytes)
         decoded_image = transpose_image_by_exif(decoded_image, orientation_tag)
     except Exception:
         logger.debug("JPEG 解码失败，回退到 cv2.imdecode。")
         decoded_image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
-    
+
     decoding_duration_ms = (time.perf_counter() - decoding_start_time) * 1000
     logger.debug(f"图像解码耗时: {decoding_duration_ms:.3f} ms.")
+    logger.debug(f"图像大小：{decoded_image.shape}")
     return decoded_image
 
 
@@ -188,12 +203,14 @@ def decode_image_bytes(image_bytes: np.ndarray) -> np.ndarray:
     before_sleep=before_sleep_log(logger, logging.WARNING),
     retry=retry_if_not_exception_type(ValueError),
 )
-async def make_request(url: str, session: aiohttp.ClientSession, headers: dict) -> aiohttp.ClientResponse:
+async def make_request(
+    url: str, session: aiohttp.ClientSession, headers: dict
+) -> aiohttp.ClientResponse:
     """带重试机制的异步 GET 请求。"""
     resp = await session.get(url, allow_redirects=True, headers=headers)
     if resp.status in [401, 403, 404]:
         raise ValueError(f"获取数据失败 {url}。状态码: {resp.status}")
-    resp.raise_for_status() # 对其他 >= 400 的状态码抛出异常
+    resp.raise_for_status()  # 对其他 >= 400 的状态码抛出异常
     return resp
 
 
@@ -201,7 +218,7 @@ async def download_image(
     path_or_url: str,
     session: aiohttp.ClientSession,
     headers: dict,
-    root_images_dir: str
+    root_images_dir: str,
 ) -> Tuple[Optional[np.ndarray], Optional[str]]:
     """从 URL 或本地路径获取图像字节。"""
     try:
@@ -224,7 +241,9 @@ async def download_image(
         return None, error_message
 
 
-def create_image_data_dict(data_bytes: Optional[np.ndarray], error_message: Optional[str], decode: bool) -> dict:
+def create_image_data_dict(
+    data_bytes: Optional[np.ndarray], error_message: Optional[str], decode: bool
+) -> dict:
     """根据字节和错误信息创建最终的图像数据字典。"""
     if error_message:
         return {"data": None, "traceback": error_message}
@@ -233,7 +252,10 @@ def create_image_data_dict(data_bytes: Optional[np.ndarray], error_message: Opti
         try:
             decoded_image = decode_image_bytes(data_bytes)
             if decoded_image is None:
-                return {"data": None, "traceback": "无法解码文件，可能不是有效的图像格式。"}
+                return {
+                    "data": None,
+                    "traceback": "无法解码文件，可能不是有效的图像格式。",
+                }
             return {"data": decoded_image, "traceback": None}
         except Exception:
             return {"data": None, "traceback": traceback.format_exc()}
@@ -243,11 +265,11 @@ def create_image_data_dict(data_bytes: Optional[np.ndarray], error_message: Opti
 
 async def get_images(
     images_input: Images,
-    decode: bool,
-    session: aiohttp.ClientSession,
-    b64_decode: bool,
-    headers: dict,
-    root_images_dir: str
+    root_images_dir: str,
+    decode: bool = True,
+    session: aiohttp.ClientSession = None,
+    b64_decode: bool = True,
+    headers: dict = None,
 ) -> List[Dict]:
     """
     根据输入的 URL 或 Base64 数据，异步获取并处理图像。
@@ -256,7 +278,9 @@ async def get_images(
 
     if images_input.urls:
         tasks = [
-            asyncio.ensure_future(download_image(url, session, headers, root_images_dir))
+            asyncio.ensure_future(
+                download_image(url, session, headers, root_images_dir)
+            )
             for url in images_input.urls
         ]
         results = await asyncio.gather(*tasks)

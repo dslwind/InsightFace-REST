@@ -24,7 +24,7 @@ try:
     from if_rest.core.converters.onnx_to_trt import check_fp16, convert_onnx
     from if_rest.core.model_zoo.exec_backends import trt_backend
 except Exception as e:
-    logger.error(e)
+    logger.warning(e)
     trt_backend = None
     convert_onnx = None
 
