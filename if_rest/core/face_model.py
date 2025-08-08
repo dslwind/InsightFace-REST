@@ -3,8 +3,7 @@ import base64
 import collections
 import time
 import traceback
-from functools import partial
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import cv2
 import numpy as np
@@ -12,11 +11,12 @@ from numpy.linalg import norm
 
 from if_rest.core.model_zoo.getter import get_model
 from if_rest.core.utils import fast_face_align as face_align
-from if_rest.core.utils.helpers import (colorize_log, to_chunks,
-                                        validate_max_size)
+from if_rest.core.utils.helpers import colorize_log, to_chunks
 from if_rest.core.utils.image_provider import resize_image
 from if_rest.logger import logger
+from if_rest.settings import AppSettings
 
+# 使用 collections.namedtuple 定义一个标准的人脸数据结构
 Face = collections.namedtuple(
     "Face",
     [
@@ -34,109 +34,44 @@ Face = collections.namedtuple(
         "mask",
         "mask_probs",
     ],
+    defaults=(None,) * 13,
 )
-
-Face.__new__.__defaults__ = (None,) * len(Face._fields)
 
 
 def serialize_face(
     face_dict: dict, return_face_data: bool, return_landmarks: bool = False
-):
+) -> dict:
     """
-    Serialize a face dictionary.
-
-    Args:
-        face_dict (dict): The face dictionary.
-        return_face_data (bool): Whether to include the facedata in the serialized dictionary.
-        return_landmarks (bool): Whether to include the landmarks in the serialized dictionary.
-
-    Returns:
-        dict: The serialized face dictionary.
+    序列化人脸字典，以便作为 API 响应返回。
     """
-    if face_dict.get("norm"):
+    # 规范化数值类型
+    if face_dict.get("norm") is not None:
         face_dict.update(
             vec=face_dict["vec"].tolist(),
             norm=float(face_dict["norm"]),
         )
-    # Warkaround for embed_only flag
-    if face_dict.get("prob"):
+    if face_dict.get("prob") is not None:
         face_dict.update(
             prob=float(face_dict["prob"]),
             bbox=face_dict["bbox"].astype(int).tolist(),
             size=int(face_dict["bbox"][2] - face_dict["bbox"][0]),
         )
 
-    if return_landmarks:
+    # 根据请求参数决定是否返回关键点
+    if return_landmarks and face_dict.get("landmarks") is not None:
         face_dict["landmarks"] = face_dict["landmarks"].astype(int).tolist()
     else:
         face_dict.pop("landmarks", None)
 
-    if return_face_data:
+    # 根据请求参数决定是否返回 Base64 编码的人脸图像
+    if return_face_data and face_dict.get("facedata") is not None:
         face_dict["facedata"] = base64.b64encode(
-            cv2.imencode(".jpg", face_dict["facedata"])[1].tostring()
+            cv2.imencode(".jpg", face_dict["facedata"])[1].tobytes()
         ).decode("ascii")
     else:
         face_dict.pop("facedata", None)
 
     return face_dict
-
-
-# Wrapper for insightface detection model
-class Detector:
-    def __init__(
-        self,
-        det_name: str = "retinaface_r50_v1",
-        max_size=None,
-        backend_name: str = "trt",
-        force_fp16: bool = False,
-        triton_uri=None,
-        max_batch_size: int = 1,
-        root_dir="/models",
-    ):
-        """
-        Wrapper for face detector.
-
-        Args:
-            det_name (str): The name of the detection model.
-            max_size (List[int]): The maximum size of the input image.
-            backend_name (str): The name of the backend to use.
-            force_fp16 (bool): Whether to force float16 precision.
-            triton_uri (str): The URI of the Triton server.
-            root_dir (str): The directory where the models are stored.
-        """
-        if max_size is None:
-            max_size = [640, 480]
-
-        self.retina = get_model(
-            det_name,
-            backend_name=backend_name,
-            force_fp16=force_fp16,
-            im_size=max_size,
-            root_dir=root_dir,
-            download_model=False,
-            triton_uri=triton_uri,
-            max_batch_size=max_batch_size,
-        )
-
-        self.retina.prepare(nms=0.35)
-
-    def detect(self, data, threshold=0.3):
-        """
-        Detect faces in input images.
-
-        Args:
-           data (numpy array): The input images.
-           threshold (float): The detection threshold. (Default: 0.3)
-
-        Returns:
-           tuple: A tuple containing the bounding boxes, probabilities, and landmarks of the detected faces.
-        """
-        bboxes, landmarks = self.retina.detect(data, threshold=threshold)
-
-        boxes = [e[:, 0:4] for e in bboxes]
-        probs = [e[:, 4] for e in bboxes]
-
-        return boxes, probs, landmarks
 
 
 def reproject_points(dets, scale: float):
@@ -156,545 +91,357 @@ def reproject_points(dets, scale: float):
 
 
 class FaceAnalysis:
-    def __init__(
-        self,
-        det_name: str = "retinaface_r50_v1",
-        rec_name: str = "arcface_r100_v1",
-        ga_name: str = "genderage_v1",
-        mask_detector: str = "mask_detector",
-        max_size=None,
-        max_rec_batch_size: int = 1,
-        max_det_batch_size: int = 1,
-        backend_name: str = "trt",
-        force_fp16: bool = False,
-        triton_uri=None,
-        root_dir: str = "/models",
-        **kwargs,
-    ):
+    def __init__(self, settings: AppSettings, model_meta: Dict[str, Any], **kwargs):
         """
-        A class for analyzing faces.
+        人脸分析的核心类。
 
         Args:
-            det_name (str): The name of the detection model.
-            rec_name (str): The name of the recognition model.
-            ga_name (str): The name of the gender and age estimation model.
-            mask_detector (str): The name of the mask detector model.
-            max_size (List[int]): The maximum size of the input image.
-            max_rec_batch_size (int): The maximum batch size for the recognition model.
-            max_det_batch_size (int): The maximum batch size for the detection model.
-            backend_name (str): The name of the backend to use.
-            force_fp16 (bool): Whether to force float16 precision.
-            triton_uri (str): The URI of the Triton server.
-            root_dir (str): The directory where the models are stored.
+            settings (AppSettings): 统一的应用配置对象。
+            model_meta (Dict[str, Any]): 从 models.json 加载的模型元数据。
         """
+        self.settings = settings
+        self.model_meta = model_meta
+        self.decode_required = True  # 图像需要被解码为 ndarray
 
-        if max_size is None:
-            max_size = [640, 640]
-
-        self.decode_required = True
-        self.max_size = validate_max_size(max_size)
-        self.max_rec_batch_size = max_rec_batch_size
-        self.max_det_batch_size = max_det_batch_size
-        self.det_name = det_name
-        self.rec_name = rec_name
-        if backend_name not in ("trt", "triton") and max_rec_batch_size != 1:
-            logger.warning(
-                "Batch processing supported only for TensorRT & Triton backend. Fallback to 1."
-            )
-            self.max_rec_batch_size = 1
-
-        assert det_name is not None
-
-        self.det_model = Detector(
-            det_name=det_name,
-            max_size=self.max_size,
-            max_batch_size=self.max_det_batch_size,
-            backend_name=backend_name,
-            force_fp16=force_fp16,
-            triton_uri=triton_uri,
-            root_dir=root_dir,
+        # 初始化检测模型
+        self.det_model = get_model(
+            model_name=settings.models.det_name,
+            settings=settings,
+            model_meta=model_meta,
+            im_size=settings.models.max_size,
+            max_batch_size=settings.models.det_batch_size,
+            force_fp16=settings.models.force_fp16,
+            download_model=False,  # 假设模型已在启动时准备好
         )
 
-        if rec_name is not None:
+        # 初始化识别模型
+        self.rec_model = None
+        if settings.models.rec_name:
             self.rec_model = get_model(
-                rec_name,
-                backend_name=backend_name,
-                force_fp16=force_fp16,
-                max_batch_size=self.max_rec_batch_size,
-                root_dir=root_dir,
+                model_name=settings.models.rec_name,
+                settings=settings,
+                model_meta=model_meta,
+                max_batch_size=settings.models.rec_batch_size,
+                force_fp16=settings.models.force_fp16,
                 download_model=False,
-                triton_uri=triton_uri,
             )
             self.rec_model.prepare()
-        else:
-            self.rec_model = None
 
-        if ga_name is not None:
+        # 初始化性别年龄模型
+        self.ga_model = None
+        if settings.models.ga_name:
             self.ga_model = get_model(
-                ga_name,
-                backend_name=backend_name,
-                force_fp16=force_fp16,
-                max_batch_size=self.max_rec_batch_size,
-                root_dir=root_dir,
+                model_name=settings.models.ga_name,
+                settings=settings,
+                model_meta=model_meta,
+                max_batch_size=settings.models.rec_batch_size,
+                force_fp16=settings.models.force_fp16,
                 download_model=False,
-                triton_uri=triton_uri,
             )
             self.ga_model.prepare()
-        else:
-            self.ga_model = None
 
-        if mask_detector is not None:
+        # 初始化口罩检测模型
+        self.mask_model = None
+        if settings.models.mask_detector:
             self.mask_model = get_model(
-                mask_detector,
-                backend_name=backend_name,
-                force_fp16=force_fp16,
-                max_batch_size=self.max_rec_batch_size,
-                root_dir=root_dir,
+                model_name=settings.models.mask_detector,
+                settings=settings,
+                model_meta=model_meta,
+                max_batch_size=settings.models.rec_batch_size,
+                force_fp16=settings.models.force_fp16,
                 download_model=False,
-                triton_uri=triton_uri,
             )
-
             self.mask_model.prepare()
-        else:
-            self.mask_model = None
 
-    def sort_boxes(self, boxes, probs, landmarks, shape, max_num=0):
-        """
-        Sort the detected faces by confidence score.
-        Based on original InsightFace python package implementation
-        Args:
-            boxes (numpy array): The bounding boxes of the detected faces.
-            probs (numpy array): The confidence scores of the detected faces.
-            landmarks (numpy array): The landmarks of the detected faces.
-            shape (tuple): The shape of the input image.
-            max_num (int): The maximum number of faces to return.
-
-        Returns:
-            tuple: A tuple containing the sorted bounding boxes, probabilities, and landmarks.
-        """
+    def _sort_faces_by_centrality(
+        self, boxes, probs, landmarks, image_shape, max_num=0
+    ):
+        """按人脸在图像中心的程度和大小对检测结果进行排序。"""
         if max_num > 0 and boxes.shape[0] > max_num:
-            area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
-            img_center = shape[0] // 2, shape[1] // 2
+            image_center_y, image_center_x = image_shape[0] // 2, image_shape[1] // 2
+
+            # 计算人脸中心点到图像中心的距离
+            box_centers_x = (boxes[:, 0] + boxes[:, 2]) / 2
+            box_centers_y = (boxes[:, 1] + boxes[:, 3]) / 2
             offsets = np.vstack(
                 [
-                    (boxes[:, 0] + boxes[:, 2]) / 2 - img_center[1],
-                    (boxes[:, 1] + boxes[:, 3]) / 2 - img_center[0],
+                    box_centers_x - image_center_x,
+                    box_centers_y - image_center_y,
                 ]
             )
             offset_dist_squared = np.sum(np.power(offsets, 2.0), 0)
-            values = area  # some extra weight on the centering
-            bindex = np.argsort(values)[::-1]  # some extra weight on the centering
-            bindex = bindex[0:max_num]
 
-            boxes = boxes[bindex, :]
-            probs = probs[bindex]
+            # 使用面积作为主要排序依据，距离作为次要因素（此处未加权）
+            areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
 
-            landmarks = landmarks[bindex, :]
+            # 选择面积最大的 N 个
+            indices = np.argsort(areas)[::-1][:max_num]
+
+            return boxes[indices, :], probs[indices], landmarks[indices, :]
 
         return boxes, probs, landmarks
 
-    def process_faces(
-        self,
-        faces: List[dict],
-        extract_embedding: bool = True,
-        extract_ga: bool = True,
-        return_face_data: bool = False,
-        detect_masks: bool = True,
-        mask_thresh: float = 0.89,
-        **kwargs,
+    def _run_feature_extraction_batch(
+        self, crops, extract_embedding, extract_ga, detect_masks, mask_thresh
     ):
-        """
-        Process the detected faces.
+        """在一个批次上同步运行所有特征提取模型。"""
+        batch_size = len(crops)
+        embeddings, gender_age_results, mask_results = (
+            [None] * batch_size,
+            [[None, None]] * batch_size,
+            [None] * batch_size,
+        )
 
-        Args:
-            faces (List[dict]): The list of detected faces.
-            extract_embedding (bool): Whether to extract the embedding for each face.
-            extract_ga (bool): Whether to extract the gender and age estimation for each face.
-            return_face_data (bool): Whether to return the facedata for each face.
-            detect_masks (bool): Whether to detect masks for each face.
-            mask_thresh (float): The threshold for detecting masks.
+        if extract_embedding and self.rec_model:
+            embeddings = self.rec_model.get_embedding(crops)
 
-        Yields:
-            dict: A dictionary containing the processed face data.
-        """
-        chunked_faces = to_chunks(faces, self.max_rec_batch_size)
-        for chunk in chunked_faces:
+        if extract_ga and self.ga_model:
+            gender_age_results = self.ga_model.get(crops)
+
+        if detect_masks and self.mask_model:
+            mask_predictions = self.mask_model.get(crops)
+            mask_results = []
+            for mask_pred in mask_predictions:
+                mask_prob, no_mask_prob = float(mask_pred[0]), float(mask_pred[1])
+                is_mask = mask_prob > no_mask_prob and mask_prob >= mask_thresh
+                mask_results.append(
+                    {
+                        "is_mask": is_mask,
+                        "probs": {"mask": mask_prob, "no_mask": no_mask_prob},
+                    }
+                )
+
+        return embeddings, gender_age_results, mask_results
+
+    async def _process_faces_in_batches(self, faces, **kwargs):
+        """异步处理所有检测到的人脸，分批次进行特征提取。"""
+        processed_faces = []
+        face_chunks = to_chunks(faces, self.settings.models.rec_batch_size)
+
+        for chunk in face_chunks:
             chunk = list(chunk)
-            crops = [e["facedata"] for e in chunk]
-            total = len(crops)
-            embeddings = [None] * total
-            ga = [[None, None]] * total
+            crops = [face["facedata"] for face in chunk]
 
-            if extract_embedding:
-                t0 = time.perf_counter()
-                embeddings = self.rec_model.get_embedding(crops)
-                took = time.perf_counter() - t0
-                logger.debug(
-                    f"Embedding {total} faces took: {took * 1000:.3f} ms. ({(took / total) * 1000:.3f} ms. per face)"
-                )
+            # 在线程池中运行同步的特征提取函数
+            embeddings, ga_results, mask_results = await asyncio.to_thread(
+                self._run_feature_extraction_batch, crops, **kwargs
+            )
 
-            if extract_ga and self.ga_model:
-                t0 = time.perf_counter()
-                ga = self.ga_model.get(crops)
-                t1 = time.perf_counter()
-                took = t1 - t0
-                logger.debug(
-                    f"Extracting g/a for {total} faces took: {took * 1000:.3f} ms. ({(took / total) * 1000:.3f} ms. per face)"
-                )
-
-            if detect_masks and self.mask_model:
-                t0 = time.perf_counter()
-                masks = self.mask_model.get(crops)
-                t1 = time.perf_counter()
-                t1 = time.perf_counter()
-                took = t1 - t0
-                logger.debug(
-                    f"Detecting masks for  {total} faces took: {took * 1000:.3f} ms. ({(took / total) * 1000:.3f} ms. per face)"
-                )
-
-            for i, crop in enumerate(crops):
-                embedding_norm = None
-                normed_embedding = None
-                gender = None
-                age = None
-                mask = None
-                mask_probs = None
+            for i, face_data in enumerate(chunk):
                 embedding = embeddings[i]
-                if extract_embedding:
+                gender, age = ga_results[i]
+                mask_info = mask_results[i]
+
+                if embedding is not None:
                     embedding_norm = norm(embedding)
                     normed_embedding = embedding / embedding_norm
+                    face_data.update(norm=embedding_norm, vec=normed_embedding)
 
-                if extract_ga and self.ga_model:
-                    _ga = ga[i]
-                    gender = int(_ga[0])
-                    age = _ga[1]
+                if gender is not None:
+                    face_data.update(gender=int(gender), age=age)
 
-                if detect_masks and self.mask_model:
-                    _masks = masks[i]
-                    mask = False
-                    mask_prob = float(_masks[0])
-                    no_mask_prob = float(_masks[1])
-                    if mask_prob > no_mask_prob and mask_prob >= mask_thresh:
-                        mask = True
-                    mask_probs = dict(mask=mask_prob, no_mask=no_mask_prob)
-
-                face = chunk[i]
-                if return_face_data is False:
-                    face["facedata"] = None
-
-                # face['raw_vec'] = embedding
-                face["norm"] = embedding_norm
-                face["vec"] = normed_embedding
-                face["gender"] = gender
-                face["age"] = age
-                face["mask"] = mask
-                face["mask_probs"] = mask_probs
-
-                yield face
-
-    # Process single image
-    async def get(
-        self,
-        images,
-        extract_embedding: bool = True,
-        extract_ga: bool = True,
-        detect_masks: bool = True,
-        return_face_data: bool = True,
-        max_size: List[int] = None,
-        threshold: float = 0.6,
-        min_face_size: int = 0,
-        mask_thresh: float = 0.89,
-        limit_faces: int = 0,
-        **kwargs,
-    ):
-        """
-        Process a list of images using the FaceAnalysis model.
-
-        Args:
-            images (List[np.ndarray]): A list of image arrays.
-            extract_embedding (bool, optional): Whether to extract embeddings from faces. Defaults to True.
-            extract_ga (bool, optional): Whether to extract gender and age information from faces. Defaults to True.
-            detect_masks (bool, optional): Whether to detect masks on faces. Defaults to False.
-            return_face_data (bool, optional): Whether to return face data in the output. Defaults to False.
-            max_size (List[int], optional): The maximum size of the input images. Defaults to None.
-            threshold (float, optional): The detection threshold. Defaults to 0.6.
-            limit_faces (int, optional): The maximum number of faces to detect per image. Defaults to 0.
-            min_face_size (int, optional): The minimum face size to detect. Defaults to 0.
-            mask_thresh (float, optional): The mask detection threshold. Defaults to 0.89.
-
-        Returns:
-            List[dict]: A list of dictionaries containing face data and embeddings.
-        """
-        ts = time.perf_counter()
-
-        # If detector has input_shape attribute, use it instead of provided value
-        try:
-            max_size = self.det_model.retina.input_shape[2:][::-1]
-        except:
-            pass
-
-        # Pre-assign max_size to resize function
-        _partial_resize = partial(resize_image, max_size=max_size)
-        # Pre-assign threshold to detect function
-        _partial_detect = partial(self.det_model.detect, threshold=threshold)
-
-        # Initialize resized images iterator
-        res_images = map(_partial_resize, images)
-        batches = to_chunks(res_images, self.max_det_batch_size)
-
-        faces = []
-        faces_per_img = {}
-
-        for bid, batch in enumerate(batches):
-            batch_imgs, scales = zip(*batch)
-            t0 = time.perf_counter()
-            det_predictions = zip(*_partial_detect(batch_imgs))
-            t1 = time.perf_counter()
-            logger.debug(f"Detection took: {(t1 - t0) * 1000:.3f} ms.")
-
-            for idx, pred in enumerate(det_predictions):
-                await asyncio.sleep(0)
-                orig_id = (bid * self.max_det_batch_size) + idx
-                boxes, probs, landmarks = pred
-                faces_per_img[orig_id] = len(boxes)
-
-                if not isinstance(boxes, type(None)):
-                    t0 = time.perf_counter()
-                    if limit_faces > 0:
-                        boxes, probs, landmarks = self.sort_boxes(
-                            boxes,
-                            probs,
-                            landmarks,
-                            shape=batch_imgs[idx].shape,
-                            max_num=limit_faces,
-                        )
-                        faces_per_img[orig_id] = len(boxes)
-
-                    # Translate points to original image size
-                    boxes = reproject_points(boxes, scales[idx])
-                    logger.debug(landmarks.shape)
-                    landmarks = reproject_points(landmarks, scales[idx])
-                    # Crop faces from original image instead of resized to improve quality
-                    if (
-                        extract_ga
-                        or extract_embedding
-                        or return_face_data
-                        or detect_masks
-                    ):
-                        crops = face_align.norm_crop_batched(images[orig_id], landmarks)
-                    else:
-                        crops = [None] * len(boxes)
-
-                    for i, _crop in enumerate(crops):
-                        face = dict(
-                            bbox=boxes[i],
-                            landmarks=landmarks[i],
-                            prob=probs[i],
-                            num_det=i,
-                            scale=scales[idx],
-                            facedata=_crop,
-                        )
-                        if min_face_size > 0:
-                            w = boxes[i][2] - boxes[i][0]
-                            if w >= min_face_size:
-                                faces.append(face)
-                        else:
-                            faces.append(face)
-
-                    t1 = time.perf_counter()
-                    logger.debug(
-                        f"Cropping {len(boxes)} faces took: {(t1 - t0) * 1000:.3f} ms."
+                if mask_info is not None:
+                    face_data.update(
+                        mask=mask_info["is_mask"], mask_probs=mask_info["probs"]
                     )
 
-        # Process detected faces
-        tps = time.perf_counter()
-        if extract_ga or extract_embedding or detect_masks:
-            faces = list(
-                self.process_faces(
-                    faces,
-                    extract_embedding=extract_embedding,
-                    extract_ga=extract_ga,
-                    return_face_data=return_face_data,
-                    detect_masks=detect_masks,
-                    mask_thresh=mask_thresh,
+                if not kwargs.get("return_face_data", False):
+                    face_data["facedata"] = None
+
+                processed_faces.append(face_data)
+
+        return processed_faces
+
+    def _run_detection_batch(self, images_batch, threshold):
+        """在一个批次上同步运行检测模型。"""
+        return self.det_model.detect(images_batch, threshold=threshold)
+
+    async def get(self, images, **kwargs):
+        """
+        异步处理一系列图像，执行人脸检测和特征提取。
+        """
+        total_start_time = time.perf_counter()
+
+        # 从 kwargs 中提取参数
+        max_size = kwargs.get("max_size") or self.settings.models.max_size
+        threshold = kwargs.get("threshold", 0.6)
+        limit_faces = kwargs.get("limit_faces", 0)
+        min_face_size = kwargs.get("min_face_size", 0)
+
+        # 1. 图像预处理
+        resized_images_with_scales = [resize_image(img, max_size) for img in images]
+        resized_images, scales = zip(*resized_images_with_scales)
+
+        # 2. 分批次进行人脸检测
+        all_faces = []
+        faces_per_image = {}
+        image_batches = to_chunks(resized_images, self.settings.models.det_batch_size)
+
+        for batch_index, image_batch in enumerate(image_batches):
+            image_batch = list(image_batch)
+
+            # 在线程池中运行同步的检测函数
+            detection_results = await asyncio.to_thread(
+                self._run_detection_batch, image_batch, threshold
+            )
+
+            # 3. 处理检测结果
+            for i, (boxes, probs, landmarks) in enumerate(zip(*detection_results)):
+                original_image_index = (
+                    batch_index * self.settings.models.det_batch_size + i
                 )
-            )
-        tpf = time.perf_counter()
-        logger.debug(
-            colorize_log(
-                string=f"Processing faces took: {(tpf - tps) * 1000:.3f} ms.",
-                color="green",
-            )
-        )
-        faces_by_img = []
-        offset = 0
 
-        for key in faces_per_img:
-            value = faces_per_img[key]
-            faces_by_img.append(faces[offset : offset + value])
-            offset += value
+                if boxes is None or len(boxes) == 0:
+                    faces_per_image[original_image_index] = 0
+                    continue
 
-        tf = time.perf_counter()
-
-        logger.debug(
-            colorize_log(
-                string=f"Full processing took: {(tf - ts) * 1000:.3f} ms.", color="red"
-            )
-        )
-        return faces_by_img
-
-    def __iterate_images(self, crops):
-        """Iterate over a list of image arrays. Yields only non-failed images.
-
-        Args:
-            images (List[np.ndarray]): A list of image arrays.
-
-        Yields:
-            np.ndarray: Each image array in the input list.
-        """
-        for face in crops:
-            if face.get("traceback") is None:
-                face = face.get("data")
-                yield face
-
-    async def embed_crops(
-        self,
-        images,
-        extract_embedding: bool = True,
-        extract_ga: bool = True,
-        detect_masks: bool = False,
-        **kwargs,
-    ):
-        """
-        Embed a list of already cropped 112x112 images using the FaceAnalysis model.
-
-        Args:
-           images (List[np.ndarray]): A list of image arrays.
-           extract_embedding (bool, optional): Whether to extract embeddings from faces. Defaults to True.
-           extract_ga (bool, optional): Whether to extract gender and age information from faces. Defaults to True.
-           detect_masks (bool, optional): Whether to detect masks on faces. Defaults to False.
-
-        Returns:
-           dict: A dictionary containing the embedded images and their corresponding embeddings.
-        """
-        t0 = time.time()
-        output = dict(took_ms=None, data=[], status="ok")
-
-        iterator = self.__iterate_images(images)
-        iterator = ({"facedata": e} for e in iterator)
-        faces = self.process_faces(
-            iterator,
-            extract_embedding=extract_embedding,
-            extract_ga=extract_ga,
-            return_face_data=False,
-            detect_masks=detect_masks,
-        )
-
-        try:
-            for image in images:
-                if image.get("traceback") is not None:
-                    _face_dict = dict(status="failed", traceback=image.get("traceback"))
-                else:
-                    _face_dict = serialize_face(
-                        face_dict=next(faces),
-                        return_face_data=False,
-                        return_landmarks=False,
+                # 排序和过滤人脸
+                if limit_faces > 0:
+                    boxes, probs, landmarks = self._sort_faces_by_centrality(
+                        boxes, probs, landmarks, image_batch[i].shape, limit_faces
                     )
-                    _face_dict["bbox"] = [0, 0, 112, 112]
-                    _face_dict["size"] = 112
-                    _face_dict["prob"] = 1.0
-                    _face_dict["status"] = "ok"
-                output["data"].append(
-                    {"status": "ok", "took_ms": 0, "faces": [_face_dict]}
-                )
-        except Exception as e:
-            tb = traceback.format_exc()
-            logger.error(tb)
-            output["status"] = "failed"
-            output["traceback"] = tb
 
-        took = time.time() - t0
-        output["took_ms"] = took * 1000
+                # 坐标重投影到原始图像尺寸
+                scale = scales[original_image_index]
+                boxes = face_align.reproject_points(boxes, scale)
+                landmarks = face_align.reproject_points(landmarks, scale)
+
+                # 裁剪人脸区域
+                crops = face_align.norm_crop_batched(
+                    images[original_image_index], landmarks
+                )
+
+                num_valid_faces = 0
+                for j, crop in enumerate(crops):
+                    face_width = boxes[j][2] - boxes[j][0]
+                    if min_face_size > 0 and face_width < min_face_size:
+                        continue
+
+                    all_faces.append(
+                        {
+                            "bbox": boxes[j],
+                            "landmarks": landmarks[j],
+                            "prob": probs[j],
+                            "num_det": j,
+                            "scale": scale,
+                            "facedata": crop,
+                        }
+                    )
+                    num_valid_faces += 1
+                faces_per_image[original_image_index] = num_valid_faces
+
+        # 4. 异步处理所有裁剪出的人脸
+        if all_faces:
+            all_faces = await self._process_faces_in_batches(all_faces, **kwargs)
+
+        # 5. 将处理后的人脸重新组织成按图像分组的列表
+        output_by_image = []
+        current_pos = 0
+        for i in range(len(images)):
+            num_faces = faces_per_image.get(i, 0)
+            output_by_image.append(all_faces[current_pos : current_pos + num_faces])
+            current_pos += num_faces
+
+        total_duration_ms = (time.perf_counter() - total_start_time) * 1000
+        logger.debug(
+            colorize_log(f"完整处理流程耗时: {total_duration_ms:.3f} ms.", "red")
+        )
+
+        return output_by_image
+
+    async def embed_crops(self, images: List[Dict], **kwargs) -> Dict:
+        """
+        为已裁剪的人脸图像（112x112）提取特征。
+        """
+        total_start_time = time.time()
+        output = {"took_ms": None, "data": [], "status": "ok"}
+
+        # 准备待处理的人脸数据
+        valid_crops = []
+        image_indices = []  # 记录有效图像的原始索引
+        for i, image_data in enumerate(images):
+            if image_data.get("traceback") is None:
+                valid_crops.append({"facedata": image_data.get("data")})
+                image_indices.append(i)
+
+        # 异步处理有效的人脸
+        if valid_crops:
+            processed_faces = await self._process_faces_in_batches(
+                valid_crops, **kwargs
+            )
+        else:
+            processed_faces = []
+
+        # 构建最终的 API 响应
+        processed_iter = iter(processed_faces)
+        for i in range(len(images)):
+            image_data = images[i]
+            if image_data.get("traceback"):
+                face_dict = {
+                    "status": "failed",
+                    "traceback": image_data.get("traceback"),
+                }
+            else:
+                try:
+                    face_dict = next(processed_iter)
+                    # 为 embed_only 模式补充一些字段
+                    face_dict.update(
+                        {
+                            "bbox": [0, 0, 112, 112],
+                            "size": 112,
+                            "prob": 1.0,
+                            "status": "ok",
+                        }
+                    )
+                    face_dict = serialize_face(face_dict, **kwargs)
+                except StopIteration:
+                    face_dict = {
+                        "status": "failed",
+                        "traceback": "Processing error: not enough results.",
+                    }
+
+            output["data"].append({"status": "ok", "took_ms": 0, "faces": [face_dict]})
+
+        output["took_ms"] = (time.time() - total_start_time) * 1000
         return output
 
-    async def embed(
-        self,
-        images: Dict[str, list],
-        max_size: List[int] = None,
-        threshold: float = 0.6,
-        limit_faces: int = 0,
-        min_face_size: int = 0,
-        return_face_data: bool = False,
-        extract_embedding: bool = True,
-        extract_ga: bool = True,
-        return_landmarks: bool = False,
-        detect_masks: bool = False,
-    ):
+    async def embed(self, images: List[Dict], **kwargs) -> Dict:
         """
-        Embed a list of images using the FaceAnalysis model.
-
-        Args:
-            images (List[np.ndarray]): A list of image arrays.
-            max_size (List[int], optional): The maximum size of the input images. Defaults to None.
-            threshold (float, optional): The detection threshold. Defaults to 0.6.
-            limit_faces (int, optional): The maximum number of faces to detect per image. Defaults to 0.
-            min_face_size (int, optional): The minimum face size to detect. Defaults to 0.
-            return_face_data (bool, optional): Whether to return face data in the output. Defaults to False.
-            extract_embedding (bool, optional): Whether to extract embeddings from faces. Defaults to True.
-            extract_ga (bool, optional): Whether to extract gender and age information from faces. Defaults to True.
-            return_landmarks (bool, optional): Whether to return detected face landmarks. Defaults to False.
-            detect_masks (bool, optional): Whether to detect masks on faces. Defaults to False.
-
-        Returns:
-           dict: A dictionary containing the embedded images and their corresponding embeddings.
+        处理完整图像，执行检测和特征提取，并格式化为最终 API 响应。
         """
-        _get = partial(
-            self.get,
-            max_size=max_size,
-            threshold=threshold,
-            return_face_data=return_face_data,
-            extract_embedding=extract_embedding,
-            extract_ga=extract_ga,
-            limit_faces=limit_faces,
-            min_face_size=min_face_size,
-            detect_masks=detect_masks,
-        )
+        output = {"took": {}, "data": []}
 
-        _serialize = partial(
-            serialize_face,
-            return_face_data=return_face_data,
-            return_landmarks=return_landmarks,
-        )
+        # 过滤掉加载失败的图像
+        valid_images = [img["data"] for img in images if img.get("traceback") is None]
 
-        output = dict(took={}, data=[])
+        # 调用核心处理函数
+        if valid_images:
+            faces_by_image = await self.get(valid_images, **kwargs)
+        else:
+            faces_by_image = []
 
-        imgs_iterable = self.__iterate_images(images)
+        # 构建最终的 API 响应，包括处理失败的图像
+        faces_iter = iter(faces_by_image)
+        for image_data in images:
+            response_item = {"status": "failed", "took_ms": 0.0, "faces": []}
+            if image_data.get("traceback"):
+                response_item["traceback"] = image_data.get("traceback")
+            else:
+                try:
+                    start_time = time.perf_counter()
+                    faces = next(faces_iter)
+                    # 序列化每个检测到的人脸
+                    response_item["faces"] = [
+                        serialize_face(face, **kwargs) for face in faces
+                    ]
+                    response_item["status"] = "ok"
+                    response_item["took_ms"] = (time.perf_counter() - start_time) * 1000
+                except StopIteration:
+                    response_item["traceback"] = "Processing error: not enough results."
+                except Exception as e:
+                    response_item["traceback"] = traceback.format_exc()
 
-        faces_by_img = (e for e in await _get([img for img in imgs_iterable]))
-
-        for img in images:
-            _faces_dict = dict(status="failed", took_ms=0.0, faces=[])
-            try:
-                if img.get("traceback") is not None:
-                    _faces_dict["status"] = "failed"
-                    _faces_dict["traceback"] = img.get("traceback")
-                else:
-                    t0 = time.perf_counter()
-                    faces = faces_by_img.__next__()
-                    tss = time.perf_counter()
-                    _faces_dict["faces"] = list(map(_serialize, faces))
-                    tsf = time.perf_counter()
-                    logger.debug(f"Serializing took: {(tsf - tss) * 1000} ms.")
-                    took = time.perf_counter() - t0
-                    _faces_dict["took_ms"] = took * 1000
-                    _faces_dict["status"] = "ok"
-            except Exception as e:
-                tb = traceback.format_exc()
-                logger.error(tb)
-                _faces_dict["status"] = "failed"
-                _faces_dict["traceback"] = tb
-
-            output["data"].append(_faces_dict)
+            output["data"].append(response_item)
 
         return output
 
@@ -702,17 +449,7 @@ class FaceAnalysis:
         self, image, faces, draw_landmarks=True, draw_scores=True, draw_sizes=True
     ):
         """
-        Draw the detected faces on the image.
-
-        Args:
-            image (numpy array): The input image.
-            faces (List[dict]): A list of face dictionaries containing the bounding box, landmarks, and score.
-            draw_landmarks (bool): Whether to draw the landmarks. Defaults to True.
-            draw_scores (bool): Whether to draw the scores. Defaults to True.
-            draw_sizes (bool): Whether to draw the sizes. Defaults to True.
-
-        Returns:
-            numpy array: The image with the detected faces drawn on it.
+        在图像上绘制检测到的人脸框、关键点等信息。
         """
         for face in faces:
             bbox = face["bbox"].astype(int)
@@ -722,11 +459,11 @@ class FaceAnalysis:
             x, y = pt1
             r, b = pt2
             w = r - x
-            if face.get("mask") is False:
+            if face.get("mask") is False:  # 如果检测到未戴口罩，框变为红色
                 color = (0, 0, 255)
             cv2.rectangle(image, pt1, pt2, color, 1)
 
-            if draw_landmarks:
+            if draw_landmarks and face.get("landmarks") is not None:
                 lms = face["landmarks"].astype(int)
                 pt_size = int(w * 0.05)
                 cv2.circle(image, (lms[0][0], lms[0][1]), 1, (0, 0, 255), pt_size)
@@ -735,7 +472,7 @@ class FaceAnalysis:
                 cv2.circle(image, (lms[3][0], lms[3][1]), 1, (0, 255, 0), pt_size)
                 cv2.circle(image, (lms[4][0], lms[4][1]), 1, (255, 0, 0), pt_size)
 
-            if draw_scores:
+            if draw_scores and face.get("prob") is not None:
                 text = f"{face['prob']:.3f}"
                 pos = (x + 3, y - 5)
                 textcolor = (0, 0, 0)
@@ -746,15 +483,16 @@ class FaceAnalysis:
                 )
                 cv2.putText(image, text, pos, 0, 0.5, color, 3, 16)
                 cv2.putText(image, text, pos, 0, 0.5, textcolor, 1, 16)
+
             if draw_sizes:
                 text = f"w:{w}"
                 pos = (x + 3, b - 5)
                 cv2.putText(image, text, pos, 0, 0.5, (0, 0, 0), 3, 16)
                 cv2.putText(image, text, pos, 0, 0.5, (0, 255, 0), 1, 16)
 
-        total = f"faces: {len(faces)} ({self.det_name})"
+        total_text = f"faces: {len(faces)} ({self.settings.models.det_name})"
         bottom = image.shape[0]
-        cv2.putText(image, total, (5, bottom - 5), 0, 1, (0, 0, 0), 3, 16)
-        cv2.putText(image, total, (5, bottom - 5), 0, 1, (0, 255, 0), 1, 16)
+        cv2.putText(image, total_text, (5, bottom - 5), 0, 1, (0, 0, 0), 3, 16)
+        cv2.putText(image, total_text, (5, bottom - 5), 0, 1, (0, 255, 0), 1, 16)
 
         return image

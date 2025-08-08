@@ -5,7 +5,7 @@ import colorlog
 
 
 def configure_logger(name: str):
-    log_level = os.getenv('LOG_LEVEL', 'INFO')
+    log_level = os.getenv("LOG_LEVEL", "INFO")
 
     logger = logging.getLogger(name)
     logger.setLevel(log_level)
@@ -20,15 +20,16 @@ def configure_logger(name: str):
 
     # Define the format for log messages with color.
     formatter = colorlog.ColoredFormatter(
-        '[{asctime}]{log_color}[{levelname:^8s}] ({filename}:{lineno} ({funcName})): {message}',
-        style='{',
+        "[{asctime}]{log_color}[{levelname:^8s}] ({filename}:{lineno} ({funcName})): {message}",
+        style="{",
         log_colors={
-            'DEBUG': 'cyan',
-            'INFO': 'green',
-            'WARNING': 'yellow',
-            'ERROR': 'red',
-            'CRITICAL': 'bold_red'
-        })
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "bold_red",
+        },
+    )
 
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
