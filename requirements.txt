@@ -10,7 +10,7 @@ ujson
 msgpack
 tqdm
 icc-rt
-numba
+numba==0.59.1
 opencv-python
 scikit-image
 onnx==1.16.0
@@ -23,3 +23,4 @@ imageio
 aiohttp
 tenacity
 colorlog
+numpy<2

@@ -5,7 +5,11 @@ from if_rest.logger import logger
 
 
 class Configs(object):
-    def __init__(self, models_dir: str = '/models'):
+    def __init__(self, models_dir: str = None):
+        # Get default from environment variable or use provided default
+        # Environment variable takes precedence over function argument
+        if models_dir is None:
+            models_dir = '/models'
         self.models_dir = self.__get_param('MODELS_DIR', models_dir)
         self.onnx_models_dir = os.path.join(self.models_dir, 'onnx')
         self.trt_engines_dir = os.path.join(self.models_dir, 'trt-engines')
@@ -57,4 +61,5 @@ class Configs(object):
         return self.models.get(model_name, {}).get('function')
 
 
+# Global config instance - reads MODELS_DIR from environment
 config = Configs()

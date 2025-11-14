@@ -222,7 +222,7 @@ def prepare_backend(model_name, backend_name, im_size: List[int] = None,
 
 def get_model(model_name: str, backend_name: str, im_size: List[int] = None, max_batch_size: int = 1,
               force_fp16: bool = False,
-              root_dir: str = "/models", download_model: bool = True, triton_uri=None, **kwargs):
+              root_dir: str = None, download_model: bool = True, triton_uri=None, **kwargs):
     """
     Returns an inference backend instance with a loaded model.
 
@@ -239,6 +239,15 @@ def get_model(model_name: str, backend_name: str, im_size: List[int] = None, max
     Returns:
         object: An inference backend instance with a loaded model.
     """
+    # Support MODELS_DIR environment variable
+    if root_dir is None:
+        root_dir = os.getenv('MODELS_DIR', '/models')
+    
+    # Create config with the specified root_dir if different from default
+    if root_dir != config.models_dir:
+        model_configs = Configs(models_dir=root_dir)
+    else:
+        model_configs = config
 
     backends = {
         'onnx': onnx_backend,
@@ -251,24 +260,24 @@ def get_model(model_name: str, backend_name: str, im_size: List[int] = None, max
         logger.error(f"Unknown backend '{backend_name}' specified. Exiting.")
         exit(1)
 
-    if model_name not in config.models.keys():
+    if model_name not in model_configs.models.keys():
         logger.error(f"Unknown model {model_name} specified."
                      f" Please select one of the following:\n"
-                     f"{', '.join(list(config.models.keys()))}")
+                     f"{', '.join(list(model_configs.models.keys()))}")
         exit(1)
 
     backend = backends[backend_name]
 
     model_path = prepare_backend(model_name, backend_name, im_size=im_size, max_batch_size=max_batch_size,
-                                 config=config, force_fp16=force_fp16,
+                                 config=model_configs, force_fp16=force_fp16,
                                  download_model=download_model)
 
-    outputs = config.get_outputs_order(model_name)
+    outputs = model_configs.get_outputs_order(model_name)
     if not outputs and backend_name == 'trt':
         logger.debug(f'No output order provided, for "{model_name}" trying to read it from "output_order.json"')
-        trt_dir, trt_path = config.build_model_paths(model_name, 'plan')
+        trt_dir, trt_path = model_configs.build_model_paths(model_name, 'plan')
         outputs = read_outputs_order(trt_dir)
 
-    func = func_map[config.models[model_name].get('function')]
+    func = func_map[model_configs.models[model_name].get('function')]
     model = func(model_path=model_path, backend=backend, outputs=outputs, triton_uri=triton_uri)
     return model

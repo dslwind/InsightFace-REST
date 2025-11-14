@@ -34,7 +34,7 @@ class Processing:
                  max_det_batch_size: int = 1,
                  force_fp16: bool = False,
                  triton_uri=None,
-                 root_dir: str = '/models',
+                 root_dir: str = None,
                  **kwargs):
         """
         Processing class for detecting faces, extracting embeddings and drawing faces from images.
@@ -53,7 +53,8 @@ class Processing:
             root_dir (str): The root directory for models. Defaults to '/models'.
             dl_client (aiohttp.ClientSession): An asynchronous HTTP client session. Defaults to None.
         """
-
+        if root_dir is None:
+            root_dir = os.getenv('MODELS_DIR', '/models')
         if max_size is None:
             max_size = [640, 480]
 
@@ -234,6 +235,7 @@ async def get_processing() -> Processing:
     global processing
     settings = Settings()
     if not processing:
+        root_dir = os.getenv('MODELS_DIR', '/models')
         processing = Processing(det_name=settings.models.det_name, rec_name=settings.models.rec_name,
                                 ga_name=settings.models.ga_name,
                                 mask_detector=settings.models.mask_detector,
@@ -243,7 +245,7 @@ async def get_processing() -> Processing:
                                 backend_name=settings.models.inference_backend,
                                 force_fp16=settings.models.force_fp16,
                                 triton_uri=settings.models.triton_uri,
-                                root_dir='/models'
+                                root_dir=root_dir
                                 )
     return processing
 

@@ -68,3 +68,13 @@ class Settings(BaseSettings):
     port: int = 18080
     models = Models()
     defaults = Defaults()
+    
+    class Config:
+        env_file = None  # Disable automatic .env loading, we handle it manually
+        
+    def __init__(self, **kwargs):
+        import os
+        # Support ROOT_IMAGES_DIR environment variable
+        if 'root_images_dir' not in kwargs:
+            kwargs['root_images_dir'] = os.getenv('ROOT_IMAGES_DIR', '/images')
+        super().__init__(**kwargs)

@@ -61,7 +61,7 @@ def serialize_face(_face_dict: dict, return_face_data: bool, return_landmarks: b
 class Detector:
     def __init__(self, det_name: str = 'retinaface_r50_v1', max_size=None,
                  backend_name: str = 'trt', force_fp16: bool = False, triton_uri=None, max_batch_size: int = 1,
-                 root_dir='/models'):
+                 root_dir=None):
         """
         Wrapper for face detector.
 
@@ -73,6 +73,9 @@ class Detector:
             triton_uri (str): The URI of the Triton server.
             root_dir (str): The directory where the models are stored.
         """
+        import os
+        if root_dir is None:
+            root_dir = os.getenv('MODELS_DIR', '/models')
         if max_size is None:
             max_size = [640, 480]
 
@@ -129,7 +132,7 @@ class FaceAnalysis:
                  backend_name: str = 'trt',
                  force_fp16: bool = False,
                  triton_uri=None,
-                 root_dir: str = '/models',
+                 root_dir: str = None,
                  **kwargs):
 
         """
@@ -148,7 +151,9 @@ class FaceAnalysis:
             triton_uri (str): The URI of the Triton server.
             root_dir (str): The directory where the models are stored.
         """
-
+        import os
+        if root_dir is None:
+            root_dir = os.getenv('MODELS_DIR', '/models')
         if max_size is None:
             max_size = [640, 640]
 
