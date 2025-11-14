@@ -65,7 +65,7 @@ class FaceGenderage(AbstractFaceGenderAge):
             imgs = cv2.dnn.blobFromImages(face_img, 1.0, input_size,
                                           (0., 0., 0.), swapRB=True)
 
-        _ga = []
+        ga_results = []
 
         ret = self.rec_model.run(self.outputs, {self.input.name: imgs})[0]
         for e in ret:
@@ -75,8 +75,8 @@ class FaceGenderage(AbstractFaceGenderAge):
             a = e[:, 2:202].reshape((100, 2))
             a = np.argmax(a, axis=1)
             age = int(sum(a))
-            _ga.append((gender, age))
-        return _ga
+            ga_results.append((gender, age))
+        return ga_results
 
 
 class MaskDetection(AbstractMaskDetection):
@@ -104,14 +104,14 @@ class MaskDetection(AbstractMaskDetection):
             face_img = np.stack(face_img)
 
         face_img = np.multiply(face_img, 1 / 127.5, dtype='float32') - 1.
-        _mask = []
+        mask_results = []
 
         ret = self.rec_model.run(self.outputs, {self.input.name: face_img})[0]
         for e in ret:
             mask = e[0]
             no_mask = e[1]
-            _mask.append((mask, no_mask))
-        return _mask
+            mask_results.append((mask, no_mask))
+        return mask_results
 
 
 class DetectorInfer(AbstractDetectorInfer):

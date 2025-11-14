@@ -35,7 +35,7 @@ def to_chunks(iterable, size=10):
         yield chain([first], islice(iterator, size - 1))
 
 
-def tobool(input):
+def to_bool(input):
     """
     Converts a string input to a boolean value.
 
@@ -51,7 +51,7 @@ def tobool(input):
         return False
 
 
-def toNone(input):
+def to_none(input):
     """
     Converts a string input to None if it is empty or contains the words "none" or "null".
 

@@ -22,39 +22,39 @@ Face = collections.namedtuple("Face", ['bbox', 'landmark', 'det_score', 'embeddi
 Face.__new__.__defaults__ = (None,) * len(Face._fields)
 
 
-def serialize_face(_face_dict: dict, return_face_data: bool, return_landmarks: bool = False):
+def serialize_face(face_dict: dict, return_face_data: bool, return_landmarks: bool = False):
     """
     Serialize a face dictionary.
 
     Args:
-        _face_dict (dict): The face dictionary.
+        face_dict (dict): The face dictionary.
         return_face_data (bool): Whether to include the facedata in the serialized dictionary.
         return_landmarks (bool): Whether to include the landmarks in the serialized dictionary.
 
     Returns:
         dict: The serialized face dictionary.
     """
-    if _face_dict.get('norm'):
-        _face_dict.update(vec=_face_dict['vec'].tolist(),
-                          norm=float(_face_dict['norm']))
+    if face_dict.get('norm'):
+        face_dict.update(vec=face_dict['vec'].tolist(),
+                          norm=float(face_dict['norm']))
     # Warkaround for embed_only flag
-    if _face_dict.get('prob'):
-        _face_dict.update(prob=float(_face_dict['prob']),
-                          bbox=_face_dict['bbox'].astype(int).tolist(),
-                          size=int(_face_dict['bbox'][2] - _face_dict['bbox'][0]))
+    if face_dict.get('prob'):
+        face_dict.update(prob=float(face_dict['prob']),
+                          bbox=face_dict['bbox'].astype(int).tolist(),
+                          size=int(face_dict['bbox'][2] - face_dict['bbox'][0]))
 
     if return_landmarks:
-        _face_dict['landmarks'] = _face_dict['landmarks'].astype(int).tolist()
+        face_dict['landmarks'] = face_dict['landmarks'].astype(int).tolist()
     else:
-        _face_dict.pop('landmarks', None)
+        face_dict.pop('landmarks', None)
 
     if return_face_data:
-        _face_dict['facedata'] = base64.b64encode(cv2.imencode('.jpg', _face_dict['facedata'])[1].tostring()).decode(
+        face_dict['facedata'] = base64.b64encode(cv2.imencode('.jpg', face_dict['facedata'])[1].tostring()).decode(
             'ascii')
     else:
-        _face_dict.pop('facedata', None)
+        face_dict.pop('facedata', None)
 
-    return _face_dict
+    return face_dict
 
 
 # Wrapper for insightface detection model
@@ -298,15 +298,15 @@ class FaceAnalysis:
                     normed_embedding = embedding / embedding_norm
 
                 if extract_ga and self.ga_model:
-                    _ga = ga[i]
-                    gender = int(_ga[0])
-                    age = _ga[1]
+                    ga_item = ga[i]
+                    gender = int(ga_item[0])
+                    age = ga_item[1]
 
                 if detect_masks and self.mask_model:
-                    _masks = masks[i]
+                    mask_data = masks[i]
                     mask = False
-                    mask_prob = float(_masks[0])
-                    no_mask_prob = float(_masks[1])
+                    mask_prob = float(mask_data[0])
+                    no_mask_prob = float(mask_data[1])
                     if mask_prob > no_mask_prob and mask_prob >= mask_thresh:
                         mask = True
                     mask_probs = dict(mask=mask_prob,
@@ -365,12 +365,12 @@ class FaceAnalysis:
             pass
 
         # Pre-assign max_size to resize function
-        _partial_resize = partial(resize_image, max_size=max_size)
+        partial_resize = partial(resize_image, max_size=max_size)
         # Pre-assign threshold to detect function
-        _partial_detect = partial(self.det_model.detect, threshold=threshold)
+        partial_detect = partial(self.det_model.detect, threshold=threshold)
 
         # Initialize resized images iterator
-        res_images = map(_partial_resize, images)
+        res_images = map(partial_resize, images)
         batches = to_chunks(res_images, self.max_det_batch_size)
 
         faces = []
@@ -379,7 +379,7 @@ class FaceAnalysis:
         for bid, batch in enumerate(batches):
             batch_imgs, scales = zip(*batch)
             t0 = time.perf_counter()
-            det_predictions = zip(*_partial_detect(batch_imgs))
+            det_predictions = zip(*partial_detect(batch_imgs))
             t1 = time.perf_counter()
             logger.debug(f'Detection took: {(t1 - t0) * 1000:.3f} ms.')
 
@@ -407,10 +407,10 @@ class FaceAnalysis:
                     else:
                         crops = [None] * len(boxes)
 
-                    for i, _crop in enumerate(crops):
+                    for i, crop in enumerate(crops):
                         face = dict(
                             bbox=boxes[i], landmarks=landmarks[i], prob=probs[i],
-                            num_det=i, scale=scales[idx], facedata=_crop
+                            num_det=i, scale=scales[idx], facedata=crop
                         )
                         if min_face_size > 0:
                             w = boxes[i][2] - boxes[i][0]
@@ -445,7 +445,7 @@ class FaceAnalysis:
         logger.debug(colorize_log(f'Full processing took: {(tf - ts) * 1000:.3f} ms.', 'red'))
         return faces_by_img
 
-    def __iterate_images(self, crops):
+    def _iterate_images(self, crops):
         """Iterate over a list of image arrays. Yields only non-failed images.
 
         Args:
@@ -480,7 +480,7 @@ class FaceAnalysis:
         t0 = time.time()
         output = dict(took_ms=None, data=[], status="ok")
 
-        iterator = self.__iterate_images(images)
+        iterator = self._iterate_images(images)
         iterator = ({'facedata': e} for e in iterator)
         faces = self.process_faces(iterator, extract_embedding=extract_embedding, extract_ga=extract_ga,
                                    return_face_data=False, detect_masks=detect_masks)
@@ -488,16 +488,16 @@ class FaceAnalysis:
         try:
             for image in images:
                 if image.get('traceback') is not None:
-                    _face_dict = dict(status='failed',
+                    face_dict = dict(status='failed',
                                       traceback=image.get('traceback'))
                 else:
-                    _face_dict = serialize_face(_face_dict=next(faces), return_face_data=False,
+                    face_dict = serialize_face(face_dict=next(faces), return_face_data=False,
                                                 return_landmarks=False)
-                    _face_dict['bbox'] = [0, 0, 112, 112]
-                    _face_dict['size'] = 112
-                    _face_dict['prob'] = 1.
-                    _face_dict['status'] = 'ok'
-                output['data'].append({"status": "ok", "took_ms": 0, "faces": [_face_dict]})
+                    face_dict['bbox'] = [0, 0, 112, 112]
+                    face_dict['size'] = 112
+                    face_dict['prob'] = 1.
+                    face_dict['status'] = 'ok'
+                output['data'].append({"status": "ok", "took_ms": 0, "faces": [face_dict]})
         except Exception as e:
             tb = traceback.format_exc()
             print(tb)
@@ -537,45 +537,45 @@ class FaceAnalysis:
         Returns:
            dict: A dictionary containing the embedded images and their corresponding embeddings.
         """
-        _get = partial(self.get, max_size=max_size, threshold=threshold,
+        get_func = partial(self.get, max_size=max_size, threshold=threshold,
                        return_face_data=return_face_data,
                        extract_embedding=extract_embedding, extract_ga=extract_ga,
                        limit_faces=limit_faces,
                        min_face_size=min_face_size,
                        detect_masks=detect_masks)
 
-        _serialize = partial(serialize_face, return_face_data=return_face_data,
+        serialize_func = partial(serialize_face, return_face_data=return_face_data,
                              return_landmarks=return_landmarks)
 
         output = dict(took={}, data=[])
 
-        imgs_iterable = self.__iterate_images(images)
+        imgs_iterable = self._iterate_images(images)
 
-        faces_by_img = (e for e in await _get([img for img in imgs_iterable]))
+        faces_by_img = (e for e in await get_func([img for img in imgs_iterable]))
 
         for img in images:
-            _faces_dict = dict(status='failed', took_ms=0., faces=[])
+            faces_dict = dict(status='failed', took_ms=0., faces=[])
             try:
                 if img.get('traceback') is not None:
-                    _faces_dict['status'] = 'failed'
-                    _faces_dict['traceback'] = img.get('traceback')
+                    faces_dict['status'] = 'failed'
+                    faces_dict['traceback'] = img.get('traceback')
                 else:
                     t0 = time.perf_counter()
                     faces = faces_by_img.__next__()
                     tss = time.perf_counter()
-                    _faces_dict['faces'] = list(map(_serialize, faces))
+                    faces_dict['faces'] = list(map(serialize_func, faces))
                     tsf = time.perf_counter()
                     logger.debug(f'Serializing took: {(tsf - tss) * 1000} ms.')
                     took = time.perf_counter() - t0
-                    _faces_dict['took_ms'] = took * 1000
-                    _faces_dict['status'] = 'ok'
+                    faces_dict['took_ms'] = took * 1000
+                    faces_dict['status'] = 'ok'
             except Exception as e:
                 tb = traceback.format_exc()
                 print(tb)
-                _faces_dict['status'] = 'failed'
-                _faces_dict['traceback'] = tb
+                faces_dict['status'] = 'failed'
+                faces_dict['traceback'] = tb
 
-            output['data'].append(_faces_dict)
+            output['data'].append(faces_dict)
 
         return output
 

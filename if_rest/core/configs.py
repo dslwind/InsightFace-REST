@@ -10,17 +10,17 @@ class Configs(object):
         # Environment variable takes precedence over function argument
         if models_dir is None:
             models_dir = '/models'
-        self.models_dir = self.__get_param('MODELS_DIR', models_dir)
+        self.models_dir = self._get_param('MODELS_DIR', models_dir)
         self.onnx_models_dir = os.path.join(self.models_dir, 'onnx')
         self.trt_engines_dir = os.path.join(self.models_dir, 'trt-engines')
-        self.models = self.__read_models_file()
+        self.models = self._read_models_file()
         self.type2path = dict(
             onnx=self.onnx_models_dir,
             engine=self.trt_engines_dir,
             plan=self.trt_engines_dir
         )
 
-    def __read_models_file(self):
+    def _read_models_file(self):
         models_default_path = os.path.join(self.models_dir, 'models.json')
         models_override_path = os.path.join(self.models_dir, 'models.override.json')
         models_conf = models_default_path
@@ -36,8 +36,8 @@ class Configs(object):
         except Exception as e:
             raise e
 
-    def __get_param(self, ENV, default=None):
-        return os.environ.get(ENV, default)
+    def _get_param(self, env, default=None):
+        return os.environ.get(env, default)
 
     def build_model_paths(self, model_name: str, ext: str):
         base = self.type2path[ext]

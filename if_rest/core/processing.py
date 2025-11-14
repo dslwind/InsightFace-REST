@@ -141,11 +141,11 @@ class Processing:
         logger.debug(f'Reading images took: {took_loading * 1000:.3f} ms.')
 
         if embed_only:
-            _faces_dict = await self.model.embed_crops(images,
+            faces_dict = await self.model.embed_crops(images,
                                                        extract_embedding=extract_embedding,
                                                        extract_ga=extract_ga,
                                                        detect_masks=detect_masks)
-            return _faces_dict
+            return faces_dict
 
         else:
             te0 = time.time()
@@ -205,8 +205,8 @@ class Processing:
             images = await get_images(images, session=self.dl_client)
             image = images[0].get('data')
         else:
-            __bin = np.fromstring(images, np.uint8)
-            image = cv2.imdecode(__bin, cv2.IMREAD_COLOR)
+            bin_data = np.fromstring(images, np.uint8)
+            image = cv2.imdecode(bin_data, cv2.IMREAD_COLOR)
 
         faces = await self.model.get([image],
                                      threshold=threshold,

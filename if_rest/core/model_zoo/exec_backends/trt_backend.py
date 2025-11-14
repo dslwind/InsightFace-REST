@@ -195,7 +195,7 @@ class FaceGenderage(AbstractFaceGenderAge):
             imgs = imgs[..., ::-1]
             imgs = np.transpose(imgs, (0, 3, 1, 2))
 
-        _ga = []
+        ga_results = []
         ret = self.rec_model.run(imgs, deflatten=True)[0]
         for e in ret:
             e = np.expand_dims(e, axis=0)
@@ -204,8 +204,8 @@ class FaceGenderage(AbstractFaceGenderAge):
             a = e[:, 2:202].reshape((100, 2))
             a = np.argmax(a, axis=1)
             age = int(sum(a))
-            _ga.append((gender, age))
-        return _ga
+            ga_results.append((gender, age))
+        return ga_results
 
 
 class MaskDetection(AbstractMaskDetection):
@@ -267,14 +267,14 @@ class MaskDetection(AbstractMaskDetection):
 
         face_img = np.stack(face_img)
 
-        _mask = []
+        mask_results = []
         infer_shape = _normalize_on_device_masks(face_img, self.stream, self.input_ptr)
         ret = self.rec_model.run(deflatten=True, from_device=True, infer_shape=infer_shape)[0]
         for e in ret:
             mask = e[0]
             no_mask = e[1]
-            _mask.append((mask, no_mask))
-        return _mask
+            mask_results.append((mask, no_mask))
+        return mask_results
 
 
 class DetectorInfer(AbstractDetectorInfer):

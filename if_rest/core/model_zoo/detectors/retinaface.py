@@ -123,11 +123,11 @@ def generate_anchors_fpn(cfg):
     for k in RPN_FEAT_STRIDE:
         v = cfg[str(k)]
         bs = v['BASE_SIZE']
-        __ratios = np.array(v['RATIOS'])
-        __scales = np.array(v['SCALES'])
+        ratios = np.array(v['RATIOS'])
+        scales = np.array(v['SCALES'])
         stride = int(k)
-        # print('anchors_fpn', bs, __ratios, __scales, file=sys.stderr)
-        r = generate_anchors(bs, __ratios, __scales, stride)
+        # print('anchors_fpn', bs, ratios, scales, file=sys.stderr)
+        r = generate_anchors(bs, ratios, scales, stride)
         # print('anchors_fpn', r.shape, file=sys.stderr)
         anchors.append(r)
 
@@ -221,12 +221,12 @@ class RetinaFace(AbstractDetector):
         self.nms_threshold = nms_threshold
         self.landmark_std = 1.0
 
-        _ratio = (1.,)
+        ratio = (1.,)
         fmc = 3
         if self.rac == 'net3':
-            _ratio = (1.,)
+            ratio = (1.,)
         elif self.rac == 'net3l':
-            _ratio = (1.,)
+            ratio = (1.,)
             self.landmark_std = 0.2
         else:
             assert False, 'rac setting error %s' % self.rac
@@ -234,9 +234,9 @@ class RetinaFace(AbstractDetector):
         if fmc == 3:
             self._feat_stride_fpn = [32, 16, 8]
             self.anchor_cfg = {
-                '32': {'SCALES': (32, 16), 'BASE_SIZE': 16, 'RATIOS': _ratio, 'ALLOWED_BORDER': 9999},
-                '16': {'SCALES': (8, 4), 'BASE_SIZE': 16, 'RATIOS': _ratio, 'ALLOWED_BORDER': 9999},
-                '8': {'SCALES': (2, 1), 'BASE_SIZE': 16, 'RATIOS': _ratio, 'ALLOWED_BORDER': 9999},
+                '32': {'SCALES': (32, 16), 'BASE_SIZE': 16, 'RATIOS': ratio, 'ALLOWED_BORDER': 9999},
+                '16': {'SCALES': (8, 4), 'BASE_SIZE': 16, 'RATIOS': ratio, 'ALLOWED_BORDER': 9999},
+                '8': {'SCALES': (2, 1), 'BASE_SIZE': 16, 'RATIOS': ratio, 'ALLOWED_BORDER': 9999},
             }
 
         self.use_landmarks = True
@@ -280,15 +280,15 @@ class RetinaFace(AbstractDetector):
         mask_scores_list = []
         landmarks_list = []
         t0 = time.time()
-        for _idx, s in enumerate(self._feat_stride_fpn):
-            _key = 'stride%s' % s
+        for idx_enum, s in enumerate(self._feat_stride_fpn):
+            key = 'stride%s' % s
             stride = int(s)
             if self.use_landmarks:
-                idx = _idx * 3
+                idx = idx_enum * 3
             else:
-                idx = _idx * 2
+                idx = idx_enum * 2
             if self.masks:
-                idx = _idx * 4
+                idx = idx_enum * 4
 
             A = self._num_anchors['stride%s' % s]
 
