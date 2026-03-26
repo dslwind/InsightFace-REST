@@ -1,11 +1,20 @@
 import json
 import os
+from pathlib import Path
 
 from if_rest.logger import logger
 
 
+def _default_models_dir() -> str:
+    if os.path.exists('/models'):
+        return '/models'
+    return str(Path(__file__).resolve().parents[2] / 'models')
+
+
 class Configs(object):
-    def __init__(self, models_dir: str = '/models'):
+    def __init__(self, models_dir: str = None):
+        if models_dir is None:
+            models_dir = _default_models_dir()
         self.models_dir = self.__get_param('MODELS_DIR', models_dir)
         self.onnx_models_dir = os.path.join(self.models_dir, 'onnx')
         self.trt_engines_dir = os.path.join(self.models_dir, 'trt-engines')

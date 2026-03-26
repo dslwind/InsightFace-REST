@@ -380,7 +380,7 @@ async def get_processing() -> Processing:
                                 backend_name=settings.models.inference_backend,
                                 force_fp16=settings.models.force_fp16,
                                 triton_uri=settings.models.triton_uri,
-                                root_dir='/models'
+                                root_dir=settings.models_dir
                                 )
     return processing
 

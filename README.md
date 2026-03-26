@@ -66,6 +66,22 @@ in official DeepInsight InsightFace
 
 For other deployment options refer to [README.md](https://github.com/SthPhoenix/InsightFace-REST/blob/master/compose/README.md) in `compose` directory.
 
+## Run Without Docker (CPU)
+
+If Docker is unavailable on your machine, you can run the API directly with Python.
+
+Quick start:
+
+```bash
+pip install -r requirements-local.txt
+python -m if_rest.run_local --host 0.0.0.0 --port 18080
+```
+
+The local runner will automatically prepare models and start the service.
+
+Detailed setup instructions are available in:
+[`docs/run-without-docker.md`](docs/run-without-docker.md)
+
 
 ## List of supported models:
 
@@ -454,5 +470,4 @@ REST API:
 - Added support for GPU inference
 - Resize function refactored for fixed image proportions (significant
   speed increase and memory usage optimization)
-
 

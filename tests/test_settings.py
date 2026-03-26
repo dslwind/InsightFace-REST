@@ -16,6 +16,16 @@ class SettingsTests(unittest.TestCase):
             settings = Settings()
             self.assertEqual(settings.models.ga_name, "genderage_v1")
 
+    def test_models_dir_env_override(self):
+        with patch.dict(os.environ, {"MODELS_DIR": "/tmp/custom-models"}, clear=False):
+            settings = Settings()
+            self.assertEqual(settings.models_dir, "/tmp/custom-models")
+
+    def test_root_images_dir_env_override(self):
+        with patch.dict(os.environ, {"ROOT_IMAGES_DIR": "/tmp/custom-images"}, clear=False):
+            settings = Settings()
+            self.assertEqual(settings.root_images_dir, "/tmp/custom-images")
+
 
 if __name__ == "__main__":
     unittest.main()

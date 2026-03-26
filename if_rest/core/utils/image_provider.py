@@ -15,24 +15,42 @@ import imageio
 import numpy as np
 from tenacity import (before_sleep_log, retry, retry_if_not_exception_type,
                       stop_after_attempt, wait_exponential)
-from turbojpeg import TurboJPEG
+
+try:
+    from turbojpeg import TurboJPEG
+except Exception as e:
+    TurboJPEG = None
+    _turbojpeg_import_error = e
+else:
+    _turbojpeg_import_error = None
 
 from if_rest.core.utils.helpers import tobool
 from if_rest.logger import logger
 from if_rest.schemas import Images
 from if_rest.settings import Settings
 
-if tobool(os.getenv("USE_NVJPEG", False)):
-    try:
-        from nvjpeg import NvJpeg
+def _build_jpeg_decoder():
+    if tobool(os.getenv("USE_NVJPEG", False)):
+        try:
+            from nvjpeg import NvJpeg
+            logger.info("Using nvJPEG for JPEG decoding")
+            return NvJpeg()
+        except Exception as e:
+            logger.warning(f"nvJPEG is unavailable ({e}).")
 
-        jpeg = NvJpeg()
-        logger.info("Using nvJPEG for JPEG decoding")
-    except:
+    if TurboJPEG is None:
+        logger.warning(f"TurboJPEG import failed ({_turbojpeg_import_error}). Falling back to OpenCV decoder.")
+        return None
+
+    try:
         logger.info("Using TurboJPEG for JPEG decoding")
-        jpeg = TurboJPEG()
-else:
-    jpeg = TurboJPEG()
+        return TurboJPEG()
+    except Exception as e:
+        logger.warning(f"TurboJPEG initialization failed ({e}). Falling back to OpenCV decoder.")
+        return None
+
+
+jpeg = _build_jpeg_decoder()
 
 settings = Settings()
 def_headers = settings.defaults.img_req_headers
@@ -193,15 +211,25 @@ def decode_img_bytes(image_bytes, **kwargs):
         np.ndarray: The decoded image.
     """
     t0 = time.perf_counter()
+    if isinstance(image_bytes, np.ndarray):
+        image_bytes_np = image_bytes
+        image_bytes_bin = image_bytes.tobytes()
+    else:
+        image_bytes_bin = bytes(image_bytes)
+        image_bytes_np = np.frombuffer(image_bytes_bin, dtype="uint8")
+
     try:
+        if jpeg is None:
+            raise RuntimeError("JPEG accelerator is unavailable")
+
         orientation_tag = exifread.process_file(
-            io.BytesIO(image_bytes), stop_tag="Image Orientation"
+            io.BytesIO(image_bytes_bin), stop_tag="Image Orientation"
         ).get("Image Orientation")
-        decoded_image = jpeg.decode(image_bytes)
+        decoded_image = jpeg.decode(image_bytes_bin)
         decoded_image = transpose_image(decoded_image, orientation=orientation_tag)
     except:
         logger.debug("JPEG decoder failed, fallback to cv2.imdecode")
-        decoded_image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+        decoded_image = cv2.imdecode(image_bytes_np, cv2.IMREAD_COLOR)
     t1 = time.perf_counter()
     logger.debug(f"Decoding took: {(t1 - t0) * 1000:.3f} ms.")
     return decoded_image

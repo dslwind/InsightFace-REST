@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from typing import Union, Optional, List
 
 from pydantic.v1 import Field
@@ -7,6 +9,22 @@ from pydantic.v1.validators import str_validator
 headers = {
     'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0'
 }
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _default_models_dir() -> str:
+    if os.path.exists('/models'):
+        return '/models'
+    return str(_project_root() / 'models')
+
+
+def _default_images_dir() -> str:
+    if os.path.exists('/images'):
+        return '/images'
+    return str(_project_root() / 'misc')
 
 
 def empty_to_none(v: str) -> Optional[str]:
@@ -65,7 +83,8 @@ class Models(BaseSettings):
 
 class Settings(BaseSettings):
     log_level: str = 'INFO'
-    root_images_dir: str = '/images'
+    models_dir: str = Field(default_factory=_default_models_dir, env='MODELS_DIR')
+    root_images_dir: str = Field(default_factory=_default_images_dir, env='ROOT_IMAGES_DIR')
     port: int = 18080
     models: Models = Field(default_factory=Models)
     defaults: Defaults = Field(default_factory=Defaults)
