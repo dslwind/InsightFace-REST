@@ -204,8 +204,11 @@ class Processing:
             images = await get_images(images, session=self.dl_client)
             image = images[0].get('data')
         else:
-            __bin = np.fromstring(images, np.uint8)
+            __bin = np.frombuffer(images, np.uint8)
             image = cv2.imdecode(__bin, cv2.IMREAD_COLOR)
+
+        if image is None:
+            raise ValueError("Failed to decode input image.")
 
         faces = await self.model.get([image],
                                      threshold=threshold,
@@ -223,6 +226,8 @@ class Processing:
                                       draw_sizes=draw_sizes)
 
         is_success, buffer = cv2.imencode(".jpg", image)
+        if not is_success:
+            raise RuntimeError("Failed to encode output image.")
         io_buf = io.BytesIO(buffer)
         return io_buf
 
@@ -230,8 +235,11 @@ class Processing:
     async def verify(self,
                      images: Images,
                      threshold: float = 0.3,
+                     det_threshold: float = 0.6,
                      limit_faces: int = 0,
                      min_face_size: int = 0,
+                     verbose_timings: bool = False,
+                     b64_decode: bool = True,
                      **kwargs):
         """
         Verifies if two images contain the same person.
@@ -257,7 +265,12 @@ class Processing:
         }
 
         # Process the incoming images object
-        processed_images = await get_images(images, decode=self.model.decode_required, session=self.dl_client)
+        t_read_start = time.time()
+        processed_images = await get_images(images,
+                                            decode=self.model.decode_required,
+                                            session=self.dl_client,
+                                            b64_decode=b64_decode)
+        took_read = time.time() - t_read_start
 
         if len(processed_images) < 2:
             result["error_message"] = "Verification requires at least two images."
@@ -274,13 +287,13 @@ class Processing:
         # Get faces from both images
         t_det_start = time.time()
         faces1_list = await self.model.get([img1_cv2],
-                                      threshold=0.5,
+                                      threshold=det_threshold,
                                       extract_embedding=True,
                                       limit_faces=limit_faces,
                                       min_face_size=min_face_size)
 
         faces2_list = await self.model.get([img2_cv2],
-                                      threshold=0.5,
+                                      threshold=det_threshold,
                                       extract_embedding=True,
                                       limit_faces=limit_faces,
                                       min_face_size=min_face_size)
@@ -307,18 +320,49 @@ class Processing:
         embedding2 = face2['vec']
 
         try:
+            t_compare_start = time.time()
             similarity = np.dot(embedding1, embedding2)
+            took_compare = time.time() - t_compare_start
             
             result["similarity_score"] = float(similarity)
             result["is_same_person"] = bool(similarity > threshold)
         except Exception as e:
             logger.error(f"Error calculating similarity: {e}")
             result["error_message"] = f"An unexpected error occurred during comparison: {e}"
+            took_compare = 0.0
 
-        # took_total = time.time() - t0
-        # result["took"]["total_ms"] = took_total * 1000
-        # result["took"]["detection_ms"] = took_detection * 1000
+        if verbose_timings:
+            took_total = time.time() - t0
+            result["took"] = {
+                "total_ms": took_total * 1000,
+                "read_imgs_ms": took_read * 1000,
+                "detect_and_embed_ms": took_detection * 1000,
+                "compare_ms": took_compare * 1000,
+            }
         return result
+
+    async def healthcheck(self):
+        if self.model is None:
+            raise RuntimeError("Processing model is not initialized.")
+
+        width, height = self.max_size
+        detector_input = np.zeros((height, width, 3), dtype=np.uint8)
+        await self.model.get(
+            [detector_input],
+            threshold=0.1,
+            extract_embedding=False,
+            extract_ga=False,
+            detect_masks=False,
+            return_face_data=False,
+        )
+
+        face_crop = np.zeros((112, 112, 3), dtype=np.uint8)
+        if self.model.rec_model is not None:
+            self.model.rec_model.get_embedding(face_crop)
+        if self.model.ga_model is not None:
+            self.model.ga_model.get(face_crop)
+        if self.model.mask_model is not None:
+            self.model.mask_model.get(face_crop)
 
 processing: Processing | None = None
 

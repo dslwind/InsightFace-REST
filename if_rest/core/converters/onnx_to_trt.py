@@ -1,4 +1,3 @@
-import sys
 from typing import Union
 
 import tensorrt as trt
@@ -53,7 +52,7 @@ def _build_engine_onnx(input_onnx: Union[str, bytes],
             logger.error('ERROR: Failed to parse the ONNX')
             for error in range(parser.num_errors):
                 logger.error(parser.get_error(error))
-            sys.exit(1)
+            raise RuntimeError("Failed to parse the ONNX model for TensorRT conversion.")
 
         if max_batch_size != 1:
             logger.warning('Batch size !=1 is used. Ensure your inference code supports it.')
@@ -114,7 +113,8 @@ def convert_onnx(input_onnx: Union[str, bytes],
                                        force_fp16=force_fp16, 
                                        max_batch_size=max_batch_size)
 
-    assert not isinstance(engine, type(None))
+    if engine is None:
+        raise RuntimeError("TensorRT engine build returned no engine.")
 
     with open(engine_file_path, "wb") as f:
         if trt10:

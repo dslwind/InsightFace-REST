@@ -1,11 +1,11 @@
-from typing import Annotated, Callable, List, Optional
+from typing import Annotated, Callable
 
 import msgpack
 from fastapi import (APIRouter, File, Form, Header, HTTPException, Request,
                      Response)
 from fastapi.responses import UJSONResponse
 from fastapi.routing import APIRoute
-from starlette.responses import PlainTextResponse, StreamingResponse
+from starlette.responses import StreamingResponse
 
 from if_rest.core.processing import ProcessingDep
 from if_rest.schemas import BodyDraw, BodyExtract, FaceVerification
@@ -15,7 +15,8 @@ class MsgPackRequest(Request):
     async def body(self) -> bytes:
         if not hasattr(self, "_body"):
             body = await super().body()
-            if "application/msgpack" in self.headers.getlist("Content-Type"):
+            content_types = ",".join(self.headers.getlist("Content-Type")).lower()
+            if "application/msgpack" in content_types or "application/x-msgpack" in content_types:
                 body = msgpack.unpackb(body)
             self._body = body
         return self._body
@@ -35,10 +36,26 @@ class MsgpackRoute(APIRoute):
 router = APIRouter(route_class=MsgpackRoute)
 
 
+def wants_msgpack_response(accept: str | None, requested_msgpack: bool) -> bool:
+    if requested_msgpack:
+        return True
+    if accept is None:
+        return False
+    accept = accept.lower()
+    return "application/x-msgpack" in accept or "application/msgpack" in accept
+
+
+def is_msgpack_request(content_type: str | None) -> bool:
+    if content_type is None:
+        return False
+    content_type = content_type.lower()
+    return "application/msgpack" in content_type or "application/x-msgpack" in content_type
+
+
 @router.post('/extract', tags=['Detection & recognition'])
 async def extract(data: BodyExtract,
                   processing: ProcessingDep,
-                  accept: Optional[List[str]] = Header(None),
+                  accept: Annotated[str | None, Header()] = None,
                   content_type: Annotated[str | None, Header()] = None):
     """
     Face extraction/embeddings endpoint accept json with
@@ -60,9 +77,7 @@ async def extract(data: BodyExtract,
        List[List[dict]]
     """
     try:
-        b64_decode = True
-        if content_type == 'application/msgpack':
-            b64_decode = False
+        b64_decode = not is_msgpack_request(content_type)
         output = await processing.extract(data.images, return_face_data=data.return_face_data,
                                           embed_only=data.embed_only, extract_embedding=data.extract_embedding,
                                           threshold=data.threshold, extract_ga=data.extract_ga,
@@ -72,10 +87,11 @@ async def extract(data: BodyExtract,
                                           verbose_timings=data.verbose_timings, b64_decode=b64_decode,
                                           img_req_headers=data.img_req_headers)
 
-        if data.msgpack or 'application/x-msgpack' in accept:
-            return PlainTextResponse(msgpack.dumps(output, use_single_float=True), media_type='application/x-msgpack')
-        else:
-            return UJSONResponse(output)
+        if wants_msgpack_response(accept, data.msgpack):
+            return Response(content=msgpack.dumps(output, use_single_float=True), media_type='application/x-msgpack')
+        return UJSONResponse(output)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -101,7 +117,9 @@ async def draw(data: BodyDraw,
                                        draw_sizes=data.draw_sizes,
                                        detect_masks=data.detect_masks)
         output.seek(0)
-        return StreamingResponse(output, media_type="image/png")
+        return StreamingResponse(output, media_type="image/jpeg")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -128,14 +146,18 @@ async def draw_upl(processing: ProcessingDep, file: bytes = File(...), threshold
                                        limit_faces=limit_faces,
                                        multipart=True)
         output.seek(0)
-        return StreamingResponse(output, media_type='image/jpg')
+        return StreamingResponse(output, media_type='image/jpeg')
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post('/verify', tags=['Detection & recognition'])
 async def verify(
     data: FaceVerification,
-    processing: ProcessingDep
+    processing: ProcessingDep,
+    accept: Annotated[str | None, Header()] = None,
+    content_type: Annotated[str | None, Header()] = None,
 ):
     """
     Compare two faces from the first two images provided and verify if they are from the same person.
@@ -145,13 +167,19 @@ async def verify(
        \f
     """
     try:
-        # Use the threshold from the request if provided, otherwise default to 0.3 for verification
-        threshold = data.threshold if data.threshold is not None else 0.3
         result = await processing.verify(
             images=data.images,
-            threshold=threshold
+            threshold=data.threshold,
+            det_threshold=data.det_threshold,
+            limit_faces=data.limit_faces,
+            min_face_size=data.min_face_size,
+            verbose_timings=data.verbose_timings,
+            b64_decode=not is_msgpack_request(content_type),
         )
-        # logger.info(result)
-        return UJSONResponse(dict(result))
+        if wants_msgpack_response(accept, data.msgpack):
+            return Response(content=msgpack.dumps(result, use_single_float=True), media_type='application/x-msgpack')
+        return UJSONResponse(result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

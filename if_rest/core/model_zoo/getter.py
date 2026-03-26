@@ -19,16 +19,21 @@ from if_rest.core.utils.download_google import check_hash, download_from_gdrive
 from if_rest.core.utils.helpers import prepare_folders
 from if_rest.logger import logger
 
-# Since TensorRT, TritonClient and PyCUDA are optional dependencies it might be not available
+# Since TensorRT, TritonClient and PyCUDA are optional dependencies they might be unavailable.
 try:
     from if_rest.core.converters.onnx_to_trt import check_fp16, convert_onnx
     from if_rest.core.model_zoo.exec_backends import trt_backend
 except Exception as e:
-    logger.error(e)
-
+    logger.warning(f"TensorRT backend unavailable: {e}")
     trt_backend = None
-    triton_backend = None
+    check_fp16 = None
     convert_onnx = None
+
+try:
+    from if_rest.core.model_zoo.exec_backends import triton_backend
+except Exception as e:
+    logger.warning(f"Triton backend unavailable: {e}")
+    triton_backend = None
 
 # Map function names to corresponding functions
 func_map = {
@@ -102,6 +107,8 @@ def download_onnx(src, dst, dl_type="google", md5=None):
             download_from_gdrive(src, dst)
         else:
             download(src, dst)
+        if md5 is None:
+            return dst
         hashes_match = check_hash(dst, md5, algo="md5")
         if hashes_match:
             return dst
@@ -149,7 +156,7 @@ def prepare_backend(
     trt_dir, trt_path = config.build_model_paths(model_name, "plan")
 
     onnx_exists = os.path.exists(onnx_path)
-    onnx_hash = config.models[model_name].get("md5")
+    onnx_hash = config.models[model_name].get("md5") or config.models[model_name].get("md5sum")
     trt_rebuild_required = False
 
     if onnx_exists and onnx_hash:
@@ -168,23 +175,22 @@ def prepare_backend(
             try:
                 download_onnx(dl_link, onnx_path, dl_type, onnx_hash)
             except AssertionError:
-                logger.error(
+                raise RuntimeError(
                     f"Model download failed after multiple attempts. "
                     f"Try manually downloading model and placing it to `{onnx_path}`"
                 )
-                exit(1)
             except Exception as e:
-                logger.error(e)
-                exit(1)
+                raise RuntimeError(f"Failed to download model '{model_name}': {e}") from e
             remove_initializer_from_input(onnx_path, onnx_path)
         else:
-            logger.error(
+            raise RuntimeError(
                 "You have requested non standard model, but haven't provided download link or "
                 "ONNX model. Place model to proper folder and change configs.py accordingly."
             )
-            exit(1)
 
     if backend_name == "triton":
+        if triton_backend is None:
+            raise RuntimeError("Triton backend requested but optional Triton dependencies are not installed.")
         return model_name
 
     if backend_name == "onnx":
@@ -195,6 +201,8 @@ def prepare_backend(
         return model.SerializeToString()
 
     if backend_name == "trt":
+        if trt_backend is None or check_fp16 is None or convert_onnx is None:
+            raise RuntimeError("TensorRT backend requested but TensorRT dependencies are not installed.")
         has_fp16 = check_fp16()
 
         if reshape_allowed is True:
@@ -265,22 +273,27 @@ def get_model(
 
     backends = {
         "onnx": onnx_backend,
-        "trt": trt_backend,
         "mxnet": "mxnet",
-        # 'triton': triton_backend
     }
+    if trt_backend is not None:
+        backends["trt"] = trt_backend
+    if triton_backend is not None:
+        backends["triton"] = triton_backend
+
+    if backend_name == "trt" and trt_backend is None:
+        raise RuntimeError("TensorRT backend requested but TensorRT dependencies are not installed.")
+    if backend_name == "triton" and triton_backend is None:
+        raise RuntimeError("Triton backend requested but optional Triton dependencies are not installed.")
 
     if backend_name not in backends:
-        logger.error(f"Unknown backend '{backend_name}' specified. Exiting.")
-        exit(1)
+        raise RuntimeError(f"Unknown backend '{backend_name}' specified.")
 
     if model_name not in config.models.keys():
-        logger.error(
+        raise RuntimeError(
             f"Unknown model {model_name} specified."
             f" Please select one of the following:\n"
             f"{', '.join(list(config.models.keys()))}"
         )
-        exit(1)
 
     backend = backends[backend_name]
 

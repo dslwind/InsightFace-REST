@@ -68,7 +68,7 @@ def run_benchmark(
             files = ['test_images/Stallone.jpg']
         print(f'No data directory provided. Using `{files[0]}` for testing.')
     else:
-        files = glob.glob(os.path.join(dir_path, '*.*'))
+        files = glob.glob(os.path.join(images_dir, '*.*'))
         files = [file for file in files if os.path.splitext(file)[1].lower() in allowed_ext]
         files = [read_image(file, ) for file in files]
 

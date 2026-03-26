@@ -1,5 +1,4 @@
 import os
-import sys
 
 import cv2
 import numpy as np
@@ -108,8 +107,7 @@ class Arcface(AbstractArcFace):
                 model_version=self.model_version,
             )
         except InferenceServerException as e:
-            logger.error("failed to retrieve the metadata: " + str(e))
-            sys.exit(1)
+            raise RuntimeError(f"Failed to retrieve Triton metadata for '{self.model_name}': {e}") from e
 
         try:
             model_config = self.triton_client.get_model_config(
@@ -117,8 +115,7 @@ class Arcface(AbstractArcFace):
                 model_version=self.model_version,
             )
         except InferenceServerException as e:
-            logger.error("failed to retrieve the config: " + str(e))
-            sys.exit(1)
+            raise RuntimeError(f"Failed to retrieve Triton config for '{self.model_name}': {e}") from e
 
         (
             self.max_batch_size,
@@ -248,8 +245,7 @@ class DetectorInfer(AbstractDetectorInfer):
                 model_version=self.model_version,
             )
         except InferenceServerException as e:
-            logger.error("failed to retrieve the metadata: " + str(e))
-            sys.exit(1)
+            raise RuntimeError(f"Failed to retrieve Triton metadata for '{self.model_name}': {e}") from e
 
         logger.debug(f"Model metadata: {model_metadata}")
 
@@ -259,8 +255,7 @@ class DetectorInfer(AbstractDetectorInfer):
                 model_version=self.model_version,
             )
         except InferenceServerException as e:
-            logger.error("failed to retrieve the config: " + str(e))
-            sys.exit(1)
+            raise RuntimeError(f"Failed to retrieve Triton config for '{self.model_name}': {e}") from e
 
         (
             self.max_batch_size,

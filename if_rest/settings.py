@@ -1,5 +1,6 @@
 from typing import Union, Optional, List
 
+from pydantic.v1 import Field
 from pydantic.v1.env_settings import BaseSettings
 from pydantic.v1.validators import str_validator
 
@@ -54,7 +55,7 @@ class Models(BaseSettings):
     det_name: str = 'scrfd_10g_gnkps'
     rec_name: str = 'glintr100'
     max_size: Union[StrToIntList, List[int]] = [640, 640]
-    ga_name: Union[EmptyStrToNone, None, str] = None
+    ga_name: Union[EmptyStrToNone, None, str] = Field(default=None, env=['GA_NAME', 'GA_MODEL'])
     mask_detector: Union[EmptyStrToNone, None, str] = None
     rec_batch_size: int = 1
     det_batch_size: int = 1
@@ -66,5 +67,5 @@ class Settings(BaseSettings):
     log_level: str = 'INFO'
     root_images_dir: str = '/images'
     port: int = 18080
-    models = Models()
-    defaults = Defaults()
+    models: Models = Field(default_factory=Models)
+    defaults: Defaults = Field(default_factory=Defaults)

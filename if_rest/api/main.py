@@ -37,7 +37,7 @@ async def lifespan(_: FastAPI):
     Raises:
         Exception: If an error occurs during processing initialization.
     """
-
+    dl_client = None
     logger.info(f"Starting processing module...")
     try:
         timeout = ClientTimeout(total=60.)
@@ -46,14 +46,20 @@ async def lifespan(_: FastAPI):
             ssl_context.set_ciphers('DEFAULT')
             dl_client = aiohttp.ClientSession(timeout=timeout, connector=TCPConnector(ssl=ssl_context))
         else:
-            dl_client = aiohttp.ClientSession(timeout=timeout, connector=TCPConnector(ssl=False))
+            dl_client = aiohttp.ClientSession(timeout=timeout)
         processing = await get_processing()
         await processing.start(dl_client=dl_client)
         logger.info(f"Processing module ready!")
     except Exception as e:
-        logger.error(e)
-        exit(1)
-    yield
+        logger.exception("Processing module startup failed")
+        if dl_client is not None:
+            await dl_client.close()
+        raise RuntimeError("Processing module startup failed") from e
+    try:
+        yield
+    finally:
+        if dl_client is not None:
+            await dl_client.close()
 
 
 def get_app() -> FastAPI:
