@@ -33,7 +33,6 @@ class Processing:
                  max_rec_batch_size: int = 1,
                  max_det_batch_size: int = 1,
                  force_fp16: bool = False,
-                 triton_uri=None,
                  root_dir: str = '/models',
                  **kwargs):
         """
@@ -49,7 +48,6 @@ class Processing:
             max_rec_batch_size (int): The maximum batch size for recognition. Defaults to 1.
             max_det_batch_size (int): The maximum batch size for detection. Defaults to 1.
             force_fp16 (bool): Whether to force FP16 mode. Defaults to False.
-            triton_uri (str): The URI for Triton server. Defaults to None.
             root_dir (str): The root directory for models. Defaults to '/models'.
             dl_client (aiohttp.ClientSession): An asynchronous HTTP client session. Defaults to None.
         """
@@ -66,7 +64,6 @@ class Processing:
         self.mask_detector = mask_detector
         self.force_fp16 = force_fp16
         self.backend_name = backend_name
-        self.triton_uri = triton_uri
         self.root_dir = root_dir
         self.dl_client = None
         self.model: FaceAnalysis = None
@@ -82,7 +79,6 @@ class Processing:
                                   max_det_batch_size=self.max_det_batch_size,
                                   backend_name=self.backend_name,
                                   force_fp16=self.force_fp16,
-                                  triton_uri=self.triton_uri,
                                   root_dir=self.root_dir
                                   )
 
@@ -379,7 +375,6 @@ async def get_processing() -> Processing:
                                 max_det_batch_size=settings.models.det_batch_size,
                                 backend_name=settings.models.inference_backend,
                                 force_fp16=settings.models.force_fp16,
-                                triton_uri=settings.models.triton_uri,
                                 root_dir=settings.models_dir
                                 )
     return processing

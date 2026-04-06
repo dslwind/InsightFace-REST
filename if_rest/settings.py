@@ -78,7 +78,6 @@ class Models(BaseSettings):
     rec_batch_size: int = 1
     det_batch_size: int = 1
     force_fp16: bool = False
-    triton_uri: str = None
 
 
 class Settings(BaseSettings):

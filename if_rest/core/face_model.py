@@ -89,7 +89,6 @@ class Detector:
         max_size=None,
         backend_name: str = "trt",
         force_fp16: bool = False,
-        triton_uri=None,
         max_batch_size: int = 1,
         root_dir="/models",
     ):
@@ -101,7 +100,6 @@ class Detector:
             max_size (List[int]): The maximum size of the input image.
             backend_name (str): The name of the backend to use.
             force_fp16 (bool): Whether to force float16 precision.
-            triton_uri (str): The URI of the Triton server.
             root_dir (str): The directory where the models are stored.
         """
         if max_size is None:
@@ -114,7 +112,6 @@ class Detector:
             im_size=max_size,
             root_dir=root_dir,
             download_model=False,
-            triton_uri=triton_uri,
             max_batch_size=max_batch_size,
         )
 
@@ -167,7 +164,6 @@ class FaceAnalysis:
         max_det_batch_size: int = 1,
         backend_name: str = "trt",
         force_fp16: bool = False,
-        triton_uri=None,
         root_dir: str = "/models",
         **kwargs,
     ):
@@ -184,7 +180,6 @@ class FaceAnalysis:
             max_det_batch_size (int): The maximum batch size for the detection model.
             backend_name (str): The name of the backend to use.
             force_fp16 (bool): Whether to force float16 precision.
-            triton_uri (str): The URI of the Triton server.
             root_dir (str): The directory where the models are stored.
         """
 
@@ -197,9 +192,9 @@ class FaceAnalysis:
         self.max_det_batch_size = max_det_batch_size
         self.det_name = det_name
         self.rec_name = rec_name
-        if backend_name not in ("trt", "triton") and max_rec_batch_size != 1:
+        if backend_name != "trt" and max_rec_batch_size != 1:
             logger.warning(
-                "Batch processing supported only for TensorRT & Triton backend. Fallback to 1."
+                "Batch processing supported only for TensorRT backend. Fallback to 1."
             )
             self.max_rec_batch_size = 1
 
@@ -211,7 +206,6 @@ class FaceAnalysis:
             max_batch_size=self.max_det_batch_size,
             backend_name=backend_name,
             force_fp16=force_fp16,
-            triton_uri=triton_uri,
             root_dir=root_dir,
         )
 
@@ -223,7 +217,6 @@ class FaceAnalysis:
                 max_batch_size=self.max_rec_batch_size,
                 root_dir=root_dir,
                 download_model=False,
-                triton_uri=triton_uri,
             )
             self.rec_model.prepare()
         else:
@@ -237,7 +230,6 @@ class FaceAnalysis:
                 max_batch_size=self.max_rec_batch_size,
                 root_dir=root_dir,
                 download_model=False,
-                triton_uri=triton_uri,
             )
             self.ga_model.prepare()
         else:
@@ -251,7 +243,6 @@ class FaceAnalysis:
                 max_batch_size=self.max_rec_batch_size,
                 root_dir=root_dir,
                 download_model=False,
-                triton_uri=triton_uri,
             )
 
             self.mask_model.prepare()

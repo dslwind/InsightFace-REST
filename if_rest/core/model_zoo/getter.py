@@ -19,7 +19,7 @@ from if_rest.core.utils.download_google import check_hash, download_from_gdrive
 from if_rest.core.utils.helpers import prepare_folders
 from if_rest.logger import logger
 
-# Since TensorRT, TritonClient and PyCUDA are optional dependencies they might be unavailable.
+# Since TensorRT and PyCUDA are optional dependencies they might be unavailable.
 try:
     from if_rest.core.converters.onnx_to_trt import check_fp16, convert_onnx
     from if_rest.core.model_zoo.exec_backends import trt_backend
@@ -28,12 +28,6 @@ except Exception as e:
     trt_backend = None
     check_fp16 = None
     convert_onnx = None
-
-try:
-    from if_rest.core.model_zoo.exec_backends import triton_backend
-except Exception as e:
-    logger.warning(f"Triton backend unavailable: {e}")
-    triton_backend = None
 
 # Map function names to corresponding functions
 func_map = {
@@ -188,11 +182,6 @@ def prepare_backend(
                 "ONNX model. Place model to proper folder and change configs.py accordingly."
             )
 
-    if backend_name == "triton":
-        if triton_backend is None:
-            raise RuntimeError("Triton backend requested but optional Triton dependencies are not installed.")
-        return model_name
-
     if backend_name == "onnx":
         model = onnx.load(onnx_path)
         if reshape_allowed is True:
@@ -251,7 +240,6 @@ def get_model(
     force_fp16: bool = False,
     root_dir: str = "/models",
     download_model: bool = True,
-    triton_uri=None,
     **kwargs,
 ):
     """
@@ -265,8 +253,6 @@ def get_model(
         force_fp16 (bool): Whether to force use of FP16 precision.
         root_dir (str): The root directory where models will be stored.
         download_model (bool): Whether to download the model if it doesn't exist.
-        triton_uri (str): The URI of the Triton server.
-
     Returns:
         object: An inference backend instance with a loaded model.
     """
@@ -277,13 +263,9 @@ def get_model(
     }
     if trt_backend is not None:
         backends["trt"] = trt_backend
-    if triton_backend is not None:
-        backends["triton"] = triton_backend
 
     if backend_name == "trt" and trt_backend is None:
         raise RuntimeError("TensorRT backend requested but TensorRT dependencies are not installed.")
-    if backend_name == "triton" and triton_backend is None:
-        raise RuntimeError("Triton backend requested but optional Triton dependencies are not installed.")
 
     if backend_name not in backends:
         raise RuntimeError(f"Unknown backend '{backend_name}' specified.")
@@ -320,6 +302,5 @@ def get_model(
         model_path=model_path,
         backend=backend,
         outputs=outputs,
-        triton_uri=triton_uri,
     )
     return model

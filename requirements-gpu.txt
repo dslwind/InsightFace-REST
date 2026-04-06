@@ -18,7 +18,6 @@ onnxruntime==1.16.3
 onnx-simplifier
 git+https://github.com/lilohuang/PyTurboJPEG.git
 exifread
-tritonclient[http,grpc]
 imageio
 aiohttp
 tenacity
